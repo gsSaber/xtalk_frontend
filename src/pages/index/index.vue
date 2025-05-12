@@ -1,0 +1,86 @@
+<template>
+  <view class="h-screen overflow-hidden">
+    <view class="h-[calc(100vh-170px)] overflow-auto pb-[10px]">
+      <tm-cell
+        :bottom-border-insert="true"
+        :card="false"
+        url=""
+        :link="false"
+        icon="https://vuejs.org/images/logo.png"
+        title="Vue"
+        label="版本3.5.13"
+      ></tm-cell>
+      <tm-cell
+        :bottom-border-insert="true"
+        :card="false"
+        url=""
+        :link="false"
+        icon="https://vitejs.cn/logo.svg"
+        title="Vite"
+        label="版本6.3.4"
+      ></tm-cell>
+      <tm-cell
+        :bottom-border-insert="true"
+        :card="false"
+        url=""
+        :link="false"
+        icon="https://pinia.vuejs.org/logo.svg"
+        title="Pinia"
+        label="版本^3.0.2"
+      ></tm-cell>
+      <tm-cell
+        :bottom-border-insert="true"
+        :card="false"
+        url=""
+        :link="false"
+        icon="https://www.tailwindcss.cn/favicons/apple-touch-icon.png?v=3"
+        title="TailwindCSS"
+        label="版本^3.3.5"
+      ></tm-cell>
+      <tm-cell
+        :bottom-border-insert="true"
+        :card="false"
+        url=""
+        :link="false"
+        icon="https://uviewui.com/common/logo.png"
+        title="UViewPlus"
+        label="版本^3.4.11"
+      ></tm-cell>
+      <tm-cell
+        :bottom-border-insert="true"
+        :card="false"
+        url=""
+        :link="false"
+        icon="https://tmui.design/images/logoGreat.png"
+        title="TM-UI"
+        label="版本3.2.05"
+      ></tm-cell>
+      <tm-cell
+        :bottom-border-insert="true"
+        :card="false"
+        url=""
+        :link="false"
+        icon="https://eslint.org/favicon.ico"
+        title="Eslint"
+        label="版本^9.21.0"
+      ></tm-cell>
+      <tm-cell
+        :bottom-border-insert="true"
+        :card="false"
+        url=""
+        :link="false"
+        icon="https://avatars.githubusercontent.com/u/5502029?s=48&v=4"
+        title="husky"
+        label="版本^9.1.7"
+      ></tm-cell>
+    </view>
+    <Tabbar></Tabbar>
+  </view>
+</template>
+
+<script setup>
+import Tabbar from '@/components/Tabbar/index.vue'
+import TmCell from '@/uni_modules/tm-ui/components/tm-cell/tm-cell.vue'
+</script>
+
+<style></style>
