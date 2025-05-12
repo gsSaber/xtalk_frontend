@@ -1,0 +1,8 @@
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+/* 图标必须 */
+@import url(../../uni_modules/tm-ui/css/remixicon.min.css);
+/* 自定预处理类，可选 */
+@import url(../../uni_modules/tm-ui/css/tmui.css);
