@@ -1,33 +1,42 @@
-import { defineConfig } from 'vite'
+import path from 'node:path'
 import uni from '@dcloudio/vite-plugin-uni'
-import createAutoImport from './plugins/auto-import'
-import tailwindcss from 'tailwindcss'
-import uniTailwind from '@uni-helper/vite-plugin-uni-tailwind'
-import path from 'path'
+import AutoImport from 'unplugin-auto-import/vite'
+import { defineConfig } from 'vite'
+import { UnifiedViteWeappTailwindcssPlugin as uvtw } from 'weapp-tailwindcss/vite'
+import { WeappTailwindcssDisabled } from './platform'
+import postcssPlugins from './postcss.config'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [uni(), createAutoImport(), uniTailwind()],
+  // uvtw 一定要放在 uni 后面
+  plugins: [
+    uni(),
+    uvtw({
+      rem2rpx: true,
+      disabled: WeappTailwindcssDisabled,
+    }),
+    AutoImport({
+      imports: ['vue', 'uni-app', 'pinia'],
+      eslintrc: {
+        enabled: true,
+      },
+    }),
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
     },
   },
+  // 内联 postcss 注册 tailwindcss
   css: {
     postcss: {
-      plugins: [
-        tailwindcss(),
-        require('postcss-pxtorpx-pro')({
-          unitPrecision: 3,
-          propList: ['*'],
-          selectorBlackList: [],
-          replace: true,
-          mediaQuery: false,
-          minPixelValue: 1,
-          exclude: /node_modules|uview-ui/i,
-          transform: (x) => x,
-        }),
-      ],
+      plugins: postcssPlugins,
+    },
+    // https://vitejs.dev/config/shared-options.html#css-preprocessoroptions
+    preprocessorOptions: {
+      scss: {
+        silenceDeprecations: ['legacy-js-api'],
+      },
     },
   },
 })

@@ -1,140 +1,194 @@
+<script setup>
+import { onLoad } from '@dcloudio/uni-app'
+import { useCounterStore } from '@/stores/counter'
+
+const store = useCounterStore()
+const { count } = storeToRefs(store)
+const { increment } = store
+const buttonColors = [
+  'bg-[#000]',
+  'bg-[#111]',
+  'bg-[#222]',
+  'bg-[#333]',
+  'bg-[#444]',
+  'bg-[#555]',
+  'bg-[#666]',
+  'bg-[#777]',
+  'bg-[#888]',
+  'bg-[#999]',
+  'bg-[#aaa]',
+  'bg-[#bbb]',
+  'bg-[#ccc]',
+  'bg-[#ddd]',
+  'bg-[#eee]',
+  'bg-[#fff]',
+]
+const title = ref('Hello')
+const themeRef = ref(uni.getSystemInfoSync().theme)
+const classArray = computed(() => [
+  title.value ? 'bg-[#aa00aa]' : undefined,
+  {
+    'text-[#ffffffee]': Boolean(title),
+  },
+])
+const buttonClass = computed(() => {
+  return buttonColors[count.value % buttonColors.length]
+})
+
+// #ifdef MP
+uni.onThemeChange(({ theme }) => {
+  themeRef.value = theme
+})
+// #endif
+onBeforeUnmount(() => {
+  // #ifdef MP
+  uni.offThemeChange(() => {
+    // console.log('offThemeChange')
+  })
+  // #endif
+})
+
+onLoad(() => {
+})
+
+function copy(data) {
+  uni.setClipboardData({
+    data,
+  })
+}
+</script>
+
 <template>
-  <view class="h-screen overflow-hidden">
-    <view class="h-[calc(100vh-170px)] overflow-auto px-[20px] pb-[10px]">
-      <view>
-        <tm-text font-size="36" class="text-weight-b mt-16"
-          >按钮 TmButton</tm-text
-        >
-        <view class="mb-16">
-          <tm-text>样式丰富塑造性好。</tm-text>
-        </view>
-
-        <view class="gap-15 flex flex-col">
-          <tm-button block>正常</tm-button>
-          <tm-button block color="warn">警告</tm-button>
-          <tm-button block color="error">错误</tm-button>
-          <tm-button block color="success">成功</tm-button>
-          <tm-button block color="danger">危险</tm-button>
-          <tm-button block color="info">次要</tm-button>
-        </view>
+  <view class="content">
+    <up-button type="primary" text="确定" />
+    <up-button type="primary" :plain="true" text="镂空" />
+    <up-button type="primary" :plain="true" :hairline="true" text="细边" />
+    <up-button type="primary" :disabled="true" text="禁用" />
+    <up-button type="primary" loading loadingText="加载中" />
+    <up-button type="primary" icon="map" text="图标按钮" />
+    <up-button type="primary" shape="circle" text="按钮形状" />
+    <up-button text="渐变色按钮" color="linear-gradient(to right, rgb(66, 83, 216), rgb(213, 51, 186))" />
+    <up-button type="primary" size="small" text="大小尺寸" />
+    <view class="my-3 w-full border-t border-solid border-gray-200" />
+    <view class="text-xl text-gray-600/95">
+      写法示例Start!
+    </view>
+    <view class="mt-[13.14758px] flex flex-col items-center space-y-[20rpx]">
+      <view
+        class="flex h-16 w-32 items-center justify-center rounded-[20rpx] bg-[#389f2bb1] text-white after:content-['hover_here!']"
+        hover-class="!bg-[gray] after:!content-['good_work!']"
+      />
+      <view class="text-neutral-400">
+        group published 示例
       </view>
-
-      <view>
-        <tm-text font-size="36" class="text-weight-b">大小</tm-text>
-        <view class="flex flex-row flex-row-top-start flex-wrap gap-15 mt-16">
-          <tm-button size="xs">极小</tm-button>
-          <tm-button size="s">小</tm-button>
-          <tm-button size="m">中等</tm-button>
-          <tm-button>默认</tm-button>
-          <tm-button size="g">大按钮</tm-button>
-        </view>
-      </view>
-
-      <view class="gap-15 flex flex-col">
-        <tm-text font-size="36" class="text-weight-b flex">状态</tm-text>
-        <tm-button block :loading="true">加载中</tm-button>
-        <tm-button block :disabled="true">禁用</tm-button>
-      </view>
-
-      <view>
-        <tm-text font-size="36" class="text-weight-b mb-16 d-block"
-          >图标按钮</tm-text
-        >
-        <view class="flex flex-row flex-row-top-start flex-wrap gap-15">
-          <tm-button
-            icon="thumb-up-fill"
-            size="n"
-            btn-icon
-            width="80"
-            rounded
-          ></tm-button>
-          <tm-button
-            icon="reply-line"
-            color="error"
-            size="n"
-            btn-icon
-            width="80"
-            rounded
-          ></tm-button>
-          <tm-button
-            icon="verified-badge-fill"
-            skin="outlined"
-            icon-size="52"
-            size="n"
-            btn-icon
-            width="80"
-            rounded
-          ></tm-button>
-          <tm-button
-            loading
-            skin="outlined"
-            btn-icon
-            width="80"
-            rounded
-          ></tm-button>
+      <view
+        class="group relative rounded bg-green-300 p-[60px] text-xs before:absolute before:left-1 before:top-1 before:content-['父元素']"
+        hover-class="published"
+      >
+        <view class="rounded bg-pink-400 p-2 group-[.published]:bg-yellow-400">
+          hover 父元素使得子元素背景变成黄色
         </view>
       </view>
 
+      <view class="w-32 rounded-md bg-pink-500 py-2 text-center font-semibold text-white ring-4 ring-pink-300">
+        Default Ring
+      </view>
       <view>
-        <tm-text font-size="36" class="text-weight-b mb-16 d-block"
-          >按钮样式</tm-text
-        >
-        <view class="flex flex-row flex-row-top-start flex-wrap gap-15">
-          <tm-button loading skin="outlined">加载中</tm-button>
-          <tm-button skin="dashed" :round="[20, 0, 20, 0]">异形</tm-button>
-          <tm-button color="#4300B1" :linear="['45deg', '#A531DC', '#4300B1']"
-            >渐变</tm-button
-          >
-          <tm-button skin="text">文本</tm-button>
-          <tm-button skin="thin">浅色</tm-button>
+        <button class="w-64 text-white" :class="buttonClass" @click="increment">
+          click here to inc {{ count }}
+        </button>
+      </view>
+
+      <view class="test">
+        @apply 的用法，详见 `index.vue` 的 `style` 标签块
+      </view>
+      <view class="text-neutral-600 underline" @click="copy('https://weapp-tw.icebreaker.top/docs/icons')">
+        Grid布局+ Icon 方案（点击复制链接）
+      </view>
+      <view
+        class="grid w-[80vw] grid-cols-3 place-items-center border text-center [&>view]:w-full [&>view]:py-1 [&_text]:text-[32px]"
+      >
+        <view :class="classArray">
+          <text class="i-svg-spinners-12-dots-scale-rotate" />
+        </view>
+        <view><text class="i-svg-spinners-180-ring" /></view>
+        <view :class="classArray">
+          <text class="i-svg-spinners-3-dots-bounce" />
+        </view>
+        <view>
+          <text class="i-svg-spinners-6-dots-rotate" />
+        </view>
+        <view :class="classArray">
+          <text class="i-svg-spinners-90-ring" />
+        </view>
+        <view>
+          <text class="i-svg-spinners-bars-fade" />
+        </view>
+        <view :class="classArray">
+          <text class="i-svg-spinners-blocks-scale" />
+        </view>
+        <view>
+          <text class="i-svg-spinners-clock" />
+        </view>
+        <view :class="classArray">
+          <text class="i-svg-spinners-tadpole" />
         </view>
       </view>
       <view>
-        <tm-text font-size="36" class="text-weight-b mb-16 d-block"
-          >渐变按钮</tm-text
-        >
-        <view class="gap-15 flex flex-col">
-          <tm-button block :linear="['to right', '#FFEB3A', '#4DEF8E']"
-            >按钮</tm-button
+        <view class="mb-4 text-neutral-400">
+          样式的条件编译
+          <text
+            class="text-sky-400 underline" @click="
+              copy(
+                'https://weapp-tw.icebreaker.top/docs/quick-start/uni-app-css-macro',
+              )
+            "
           >
-          <tm-button block :linear="['to right', '#00B960', '#00552C']"
-            >按钮</tm-button
-          >
-          <tm-button block :linear="['to right', '#DD7BFF', '#FF6C6C']"
-            >按钮</tm-button
-          >
-          <tm-button block :linear="['to right', '#FFC328', '#E20000']"
-            >按钮</tm-button
-          >
+            weapp-tailwindcss/css-macro
+          </text>
+        </view>
+        <view class="ifdef-[MP-WEIXIN]:bg-blue-500 ifndef-[MP-WEIXIN]:bg-red-500">
+          微信小程序为蓝色，不是微信小程序为红色
+        </view>
+
+        <view class="wx:bg-blue-500 -wx:bg-red-500">
+          <view>自定义配置的方式进行样式条件编译</view>
+          <view>相关配置见根目录下的tailwind.config.js</view>
+        </view>
+
+        <view class="apply-class-0">
+          @apply 条件编译方式0
+        </view>
+        <view class="apply-class-1">
+          @apply 条件编译方式1
         </view>
       </view>
-      <view class="mt-[50px]">
-        <up-avatar :src="'https://vuejs.org/images/logo.png'"></up-avatar>
-        <up-button type="primary" text="确定"></up-button>
-        <up-button type="primary" :plain="true" text="镂空"></up-button>
-        <up-button
-          type="primary"
-          :plain="true"
-          :hairline="true"
-          text="细边"
-        ></up-button>
-        <up-button type="primary" :disabled="true" text="禁用"></up-button>
-        <up-button type="primary" loading loading-text="加载中"></up-button>
-        <up-button type="primary" icon="map" text="图标按钮"></up-button>
-        <up-button type="primary" shape="circle" text="按钮形状"></up-button>
-        <up-button
-          text="渐变色按钮"
-          color="linear-gradient(to right, rgb(66, 83, 216), rgb(213, 51, 186))"
-        ></up-button>
-        <up-button type="primary" size="large" text="大小尺寸"></up-button>
+      <view>
+        <button class="btn">
+          此样式定义详见 `App.vue` 的 `@layer` 部分
+        </button>
       </view>
     </view>
-    <tabbar></tabbar>
   </view>
 </template>
 
-<script setup>
-import Tabbar from '@/components/Tabbar/index.vue'
-</script>
+<style lang="scss" scoped>
+.content {
+  @apply flex flex-col items-center py-4;
+}
 
-<style scoped></style>
+.test {
+  @apply flex text-center h-[100px] w-[222.222px] items-center justify-center rounded-[40px] bg-[#123456] bg-opacity-[0.54] text-[#ffffff] #{!important};
+}
+
+.apply-class-0 {
+  // 依赖 weapp-tailwindcss/css-macro
+  @apply ifdef-[MP-WEIXIN]:bg-blue-500 ifndef-[MP-WEIXIN]:bg-red-500;
+}
+
+.apply-class-1 {
+  // 依赖 weapp-tailwindcss/css-macro
+  // 这个需要在 tailwind.config.js 里进行自定义配置
+  @apply wx:bg-blue-500 -wx:bg-red-500;
+}
+</style>
