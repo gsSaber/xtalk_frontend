@@ -14,6 +14,7 @@ onHide(() => {
 
 <style lang="scss">
 @import 'uview-plus/index.scss';
+@import '@tuniao/tn-style/dist/uniapp/index.css';
 @import 'tailwindcss/base';
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
