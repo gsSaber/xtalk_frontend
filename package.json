@@ -77,7 +77,9 @@
     "clipboard": "^2.0.11",
     "dayjs": "^1.11.13",
     "pinia": "2.2.4",
+    "tnuiv3p-tn-sign-board": "^1.0.2",
     "uview-plus": "^3.4.11",
+    "vconsole": "^3.15.1",
     "vue": "3.4.21",
     "vue-i18n": "^9.14.2"
   },
