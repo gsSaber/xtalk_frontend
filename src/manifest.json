@@ -1,11 +1,10 @@
 {
-  "name": "uni-app-vue3-vite",
-  "appid": "wx27151a861026fc5d",
+  "name": "tetris-miniapp",
+  "appid": "",
   "description": "",
   "versionName": "1.0.0",
   "versionCode": "100",
   "transformPx": false,
-  /* 5+App特有相关 */
   "app-plus": {
     "usingComponents": true,
     "nvueStyleCompiler": "uni-app",
@@ -16,11 +15,8 @@
       "autoclose": true,
       "delay": 0
     },
-    /* 模块配置 */
     "modules": {},
-    /* 应用发布信息 */
     "distribute": {
-      /* android打包配置 */
       "android": {
         "permissions": [
           "<uses-permission android:name=\"android.permission.CHANGE_NETWORK_STATE\"/>",
@@ -40,23 +36,33 @@
           "<uses-permission android:name=\"android.permission.WRITE_SETTINGS\"/>"
         ]
       },
-      /* ios打包配置 */
-      "ios": {},
-      /* SDK配置 */
-      "sdkConfigs": {}
-    }
+      "ios": {
+        "dSYMs": false
+      },
+      "sdkConfigs": {
+        "geolocation": {}
+      }
+    },
+    "compatible": {
+      "ignoreVersion": true
+    },
+    "orientation": [
+      "portrait-primary",
+      "portrait-secondary",
+      "landscape-primary",
+      "landscape-secondary",
+      "default"
+    ]
   },
-  /* 快应用特有相关 */
   "quickapp": {},
-  /* 小程序特有相关 */
   "mp-weixin": {
-    "appid": "wxb3d842a4a7e3440d",
+    "appid": "",
     "setting": {
       "urlCheck": false
     },
     "usingComponents": true,
-    "lazyCodeLoading": "requiredComponents",
-    "darkmode": true
+    "darkmode": true,
+    "themeLocation": "theme.json"
   },
   "mp-alipay": {
     "usingComponents": true
@@ -70,5 +76,9 @@
   "uniStatistics": {
     "enable": false
   },
-  "vueVersion": "3"
+  "vueVersion": "3",
+  "h5": {
+    "darkmode": false,
+    "themeLocation": "theme.json"
+  }
 }
