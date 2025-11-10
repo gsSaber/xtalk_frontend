@@ -1,3 +1,5 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@font-face {
+  font-family: 'FZKai';
+  src: url('https://basic-1314306493.cos.ap-nanjing.myqcloud.com/%E5%AD%97%E4%BD%93/FangZhengKaiTi.ttf')
+    format('truetype');
+}
