@@ -40,4 +40,12 @@ export default defineConfig({
     // see unocss.config.ts for config
     UnoCSS(),
   ],
+  css: {
+    preprocessorOptions: {
+      scss: {
+        // 取消sass废弃API的报警
+        silenceDeprecations: ['legacy-js-api', 'color-functions', 'import'],
+      },
+    },
+  },
 })

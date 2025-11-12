@@ -62,7 +62,8 @@
     },
     "usingComponents": true,
     "darkmode": true,
-    "themeLocation": "theme.json"
+    "themeLocation": "theme.json",
+    "mergeVirtualHostAttributes": true
   },
   "mp-alipay": {
     "usingComponents": true
@@ -71,7 +72,8 @@
     "usingComponents": true
   },
   "mp-toutiao": {
-    "usingComponents": true
+    "usingComponents": true,
+    "mergeVirtualHostAttributes": true
   },
   "uniStatistics": {
     "enable": false

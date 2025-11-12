@@ -73,6 +73,7 @@ export default defineManifestConfig({
     usingComponents: true,
     darkmode: true,
     themeLocation: 'theme.json',
+    mergeVirtualHostAttributes: true,
   },
   'mp-alipay': {
     usingComponents: true,
@@ -82,6 +83,7 @@ export default defineManifestConfig({
   },
   'mp-toutiao': {
     usingComponents: true,
+    mergeVirtualHostAttributes: true,
   },
   'h5': {
     darkmode: false,
