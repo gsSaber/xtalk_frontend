@@ -198,6 +198,9 @@ importers:
       typescript:
         specifier: ~5.8.3
         version: 5.8.3
+      uni-use-router:
+        specifier: ^0.0.7
+        version: 0.0.7(vue@3.4.21(typescript@5.8.3))
       unocss:
         specifier: 66.0.0
         version: 66.0.0(postcss@8.5.6)(vite@5.4.20(@types/node@24.7.2)(sass@1.63.2)(terser@5.44.0))(vue@3.4.21(typescript@5.8.3))
@@ -5845,6 +5848,11 @@ packages:
 
   undici-types@7.14.0:
     resolution: {integrity: sha512-QQiYxHuyZ9gQUIrmPo3IA+hUl4KYk8uSA7cHrcKd/l3p1OTpZcM0Tbp9x7FAtXdAYhlasd60ncPpgu6ihG6TOA==}
+
+  uni-use-router@0.0.7:
+    resolution: {integrity: sha512-2iiaUOXCogAdv5sWeaNPd1VuRNy1xG5VD/GAOqnLXqVaYz7xkXyG/vSwra6uMqiURcgUYpNV0hSACpbH+z13XA==}
+    peerDependencies:
+      vue: ^3.4.21
 
   unicode-canonical-property-names-ecmascript@2.0.1:
     resolution: {integrity: sha512-dA8WbNeb2a6oQzAQ55YlT5vQAWGV9WXOsi3SskE3bcCdM0P4SDd+24zS/OCacdRq5BkdsRj9q3Pg6YyQoxIGqg==}
@@ -13554,6 +13562,10 @@ snapshots:
       quansync: 0.2.11
 
   undici-types@7.14.0: {}
+
+  uni-use-router@0.0.7(vue@3.4.21(typescript@5.8.3)):
+    dependencies:
+      vue: 3.4.21(typescript@5.8.3)
 
   unicode-canonical-property-names-ecmascript@2.0.1: {}
 
