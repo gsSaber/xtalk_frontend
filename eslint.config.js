@@ -4,4 +4,14 @@ export default uni(
   {
     unocss: true,
   },
+  {
+    files: ['**/*.js', '**/*.ts', '**/*.vue'],
+    env: {
+      browser: true,
+      node: true,
+    },
+    rules: {
+      'no-console': 'off',
+    },
+  }
 )

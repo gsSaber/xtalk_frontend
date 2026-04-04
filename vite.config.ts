@@ -8,9 +8,23 @@ import UnoCSS from 'unocss/vite'
 import AutoImport from 'unplugin-auto-import/vite'
 import { defineConfig } from 'vite'
 import UniPolyfill from 'vite-plugin-uni-polyfill'
+import vueDevTools from 'vite-plugin-vue-devtools'
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  server: {
+        port: 7634,
+        proxy: {
+        '/api': {
+          target: 'http://127.0.0.1:7635',
+          changeOrigin: true,
+        },
+        '/ws': {
+          target: 'ws://127.0.0.1:7635',
+          ws: true
+        }
+      },
+    },
   plugins: [
     // https://uni-helper.js.org/vite-plugin-uni-manifest
     UniHelperManifest(),
@@ -35,6 +49,10 @@ export default defineConfig({
       dts: 'src/auto-imports.d.ts',
       dirs: ['src/composables', 'src/stores', 'src/utils'],
       vueTemplate: true,
+    }),
+    vueDevTools({
+      launchEditor: 'code',
+      injectInDev: false,
     }),
     // https://github.com/antfu/unocss
     // see unocss.config.ts for config

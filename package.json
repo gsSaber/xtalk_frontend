@@ -7,6 +7,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "unh dev",
+    "dev:wx": "unh dev wx",
     "build": "unh build",
     "prepare": "run-s prepare:*",
     "prepare:unh": "unh prepare",
@@ -95,6 +96,7 @@
     "unplugin-auto-import": "^19.3.0",
     "vite": "^5.2.8",
     "vite-plugin-uni-polyfill": "^0.1.0",
+    "vite-plugin-vue-devtools": "^7.3.8",
     "vue-tsc": "^3.0.4"
   },
   "pnpm": {

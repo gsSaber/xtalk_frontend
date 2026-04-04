@@ -330,9 +330,6 @@ declare global {
   // @ts-ignore
   export type { Component, Slot, Slots, ComponentPublicInstance, ComputedRef, DirectiveBinding, ExtractDefaultPropTypes, ExtractPropTypes, ExtractPublicPropTypes, InjectionKey, PropType, Ref, MaybeRef, MaybeRefOrGetter, VNode, WritableComputedRef } from 'vue'
   import('vue')
-  // @ts-ignore
-  export type { TetrisGame } from './utils/tetris.js'
-  import('./utils/tetris.js')
 }
 
 // for vue template auto import
@@ -341,9 +338,6 @@ declare module 'vue' {
   interface GlobalComponents {}
   interface ComponentCustomProperties {
     readonly EffectScope: UnwrapRef<typeof import('vue')['EffectScope']>
-    readonly GAME_CONFIG: UnwrapRef<typeof import('./utils/tetris.js')['GAME_CONFIG']>
-    readonly TETROMINOS: UnwrapRef<typeof import('./utils/tetris.js')['TETROMINOS']>
-    readonly TetrisGame: UnwrapRef<typeof import('./utils/tetris.js')['TetrisGame']>
     readonly asyncComputed: UnwrapRef<typeof import('@vueuse/core')['asyncComputed']>
     readonly autoResetRef: UnwrapRef<typeof import('@vueuse/core')['autoResetRef']>
     readonly clearHighScore: UnwrapRef<typeof import('./utils/storage.js')['clearHighScore']>
