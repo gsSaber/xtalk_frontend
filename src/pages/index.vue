@@ -3,8 +3,8 @@
         <view class="container">
             <text class="page-title">Xtalk Dev</text>
             <view class="status">
-                <view><text>State: <text id="stream-state" class="value-text">--</text></text></view>
-                <view><text>Session: <text id="session-id" class="value-text">--</text></text></view>
+                <view><text>State: <text id="stream-state" class="value-text">{{ state.streamState || '--' }}</text></text></view>
+                <view><text>Session: <text id="session-id" class="value-text">{{ state.sessionId || '--' }}</text></text></view>
             </view>
             <view class="controls">
                 <button id="btn-start" @click="handleStart" :disabled="isStartDisabled">Start</button>
@@ -28,12 +28,12 @@
     </view>
     <view class="container page-main">
         <view id="latency-bar" class="latency-bar">
-            <text class="latency-item">Network: <text id="latency-network">--</text>ms</text>
-            <text class="latency-item">ASR: <text id="latency-asr">--</text>ms</text>
-            <text class="latency-item">LLM First Token: <text id="latency-llm-first">--</text>ms</text>
-            <text class="latency-item">LLM Sentence: <text id="latency-llm-sentence">--</text>ms</text>
-            <text class="latency-item">TTS First Chunk: <text id="latency-tts">--</text>ms</text>
-            <text class="latency-item latency-e2e">E2E: <text id="latency-e2e">--</text>ms</text>
+            <text class="latency-item">Network: <text id="latency-network">{{ state.latency.network ?? '--' }}</text>ms</text>
+            <text class="latency-item">ASR: <text id="latency-asr">{{ state.latency.asr ?? '--' }}</text>ms</text>
+            <text class="latency-item">LLM First Token: <text id="latency-llm-first">{{ state.latency.llmFirstToken ?? '--' }}</text>ms</text>
+            <text class="latency-item">LLM Sentence: <text id="latency-llm-sentence">{{ state.latency.llmSentence ?? '--' }}</text>ms</text>
+            <text class="latency-item">TTS First Chunk: <text id="latency-tts">{{ state.latency.ttsFirstChunk ?? '--' }}</text>ms</text>
+            <text class="latency-item latency-e2e">E2E: <text id="latency-e2e">{{ latencyE2e }}</text>ms</text>
         </view>
         <view id="recent-audio-card" class="card recent-audio-card is-hidden" aria-hidden="true">
             <view class="recent-audio-header">
@@ -55,7 +55,15 @@
             <canvas id="waveform" canvas-id="waveform"></canvas>
         </view>
         <view class="card">
-            <view id="messages"></view>
+            <view id="messages">
+                <view
+                    v-for="(msg, idx) in state.messages"
+                    :key="idx"
+                    :class="['message', `message-${msg.role || 'assistant'}`]"
+                >
+                    <text>{{ msg.content || '' }}</text>
+                </view>
+            </view>
         </view>
         <view class="toggle-bar">
             <button id="btn-toggle-thought" class="toggle-btn active">Thought</button>
@@ -88,7 +96,7 @@
 // @ts-nocheck
 import { Base64 } from 'js-base64'
 import { useRouter } from 'uni-use-router'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 
 definePage({
     layout: false,
@@ -113,10 +121,10 @@ let recentAudioHasSource = false;
 // let $voiceSelect = null;
 let $btnUploadFile = null;
 let $fileInput = null;
-let $streamState = null;
-let $sessionId = null;
+// let $streamState = null;
+// let $sessionId = null;
 let $waveform = null;
-let $messages = null;
+// let $messages = null;
 let $thoughtContent = null;
 let $captionContent = null;
 let $retrievalContent = null;
@@ -157,9 +165,35 @@ let availableAudios = [];
 const router = useRouter()
 const recentAudioButtonText = ref('播放回复语音')
 const muteButtonText = ref('Mute')
+const chatMessages = ref([])
+const state = reactive({
+    streamState: '--',
+    sessionId: '--',
+    messages: [],
+    latency: {},
+});
+const latencyE2e = computed(() => {
+    const l = state.latency || {};
+    const e2eParts = [l.network, l.asr, l.llmSentence, l.ttsFirstChunk];
+    return e2eParts.every((v) => v != null)
+        ? e2eParts.reduce((a, b) => Number(a) + Number(b), 0)
+        : '--';
+});
 const isStartDisabled = ref(false)
 const isStopDisabled = ref(true)
 let session = null
+
+function syncStateFromSession(snapshot = null) {
+    const source = snapshot || session?.state || {};
+    state.streamState = source.streamState || '--';
+    state.sessionId = source.sessionId || '--';
+    state.latency = { ...(source.latency || {}) };
+    state.messages = (source.messages || []).map((msg) => ({
+        role: msg?.role || 'assistant',
+        content: msg?.content || '',
+    }));
+    // Object.assign(state.messages, source.messages);
+}
 
 function getWebSocketURL() {
     const loc = window.location;
@@ -170,6 +204,7 @@ function getWebSocketURL() {
     return wsPath;
 }
 
+/*
 function ensureAudioContext() {
     if (!audioCtx) {
         const AC = window.AudioContext || window.webkitAudioContext;
@@ -479,6 +514,7 @@ function setupToggle(btn, panel) {
         panel.style.display = active ? '' : 'none';
     });
 }
+*/
 
 // function syncVoiceSelectValue(targetName) {
 //     if (!$voiceSelect) return;
@@ -520,9 +556,7 @@ async function handleStart() {
         return
     }
     try {
-        resetRecentAudioBuffer()
         await session.open()
-        startVisualization()
         isStartDisabled.value = true
         isStopDisabled.value = false
     } catch (e) {
@@ -537,7 +571,6 @@ async function handleStop() {
     }
     try {
         await session.close()
-        stopVisualization()
         isStartDisabled.value = false
         isStopDisabled.value = true
     } catch (e) {
@@ -559,7 +592,7 @@ function toggleMute() {
 }
 
 function playVoice() {
-    toggleRecentAudioPlayback()
+    // Recent audio playback is disabled for current scope.
 }
 
 function jump() {
@@ -601,187 +634,95 @@ try {
 const { createSession } = await loadXtalk();
 
 session = createSession(getWebSocketURL());
-
+syncStateFromSession();
 // const $btnStart = document.getElementById('btn-start');
 // const $btnStop = document.getElementById('btn-stop');
 // const $btnMute = document.getElementById('btn-mute');
  // $voiceSelect = document.getElementById('voice-select');
- $btnUploadFile = document.getElementById('btn-upload-file');
- $fileInput = document.getElementById('file-input');
- $streamState = document.getElementById('stream-state');
- $sessionId = document.getElementById('session-id');
-const $waveformNode = document.getElementById('waveform');
- $waveform = $waveformNode instanceof HTMLCanvasElement
-    ? $waveformNode
-    : $waveformNode?.querySelector?.('canvas');
- $messages = document.getElementById('messages');
- $thoughtContent = document.getElementById('thought-content');
- $captionContent = document.getElementById('caption-content');
- $retrievalContent = document.getElementById('retrieval-content');
- $panelThought = document.getElementById('panel-thought');
- $panelCaption = document.getElementById('panel-caption');
- $panelRetrieval = document.getElementById('panel-retrieval');
- $btnToggleThought = document.getElementById('btn-toggle-thought');
- $btnToggleCaption = document.getElementById('btn-toggle-caption');
- $btnToggleRetrieval = document.getElementById('btn-toggle-retrieval');
- $latencyNetwork = document.getElementById('latency-network');
- $latencyAsr = document.getElementById('latency-asr');
- $latencyLlmFirst = document.getElementById('latency-llm-first');
- $latencyLlmSentence = document.getElementById('latency-llm-sentence');
- $latencyTts = document.getElementById('latency-tts');
- $latencyE2e = document.getElementById('latency-e2e');
- $btnToggleRecentAudio = document.getElementById('btn-toggle-recent-audio');
- $recentAudioCard = document.getElementById('recent-audio-card');
- $recentAudioStatus = document.getElementById('recent-audio-status');
+ // $btnUploadFile = document.getElementById('btn-upload-file');
+ // $fileInput = document.getElementById('file-input');
+ // $streamState = document.getElementById('stream-state');
+ // $sessionId = document.getElementById('session-id');
+// const $waveformNode = document.getElementById('waveform');
+// $waveform = $waveformNode instanceof HTMLCanvasElement
+//    ? $waveformNode
+//    : $waveformNode?.querySelector?.('canvas');
+// $messages = document.getElementById('messages');
+// $thoughtContent = document.getElementById('thought-content');
+// $captionContent = document.getElementById('caption-content');
+// $retrievalContent = document.getElementById('retrieval-content');
+// $panelThought = document.getElementById('panel-thought');
+// $panelCaption = document.getElementById('panel-caption');
+// $panelRetrieval = document.getElementById('panel-retrieval');
+// $btnToggleThought = document.getElementById('btn-toggle-thought');
+// $btnToggleCaption = document.getElementById('btn-toggle-caption');
+// $btnToggleRetrieval = document.getElementById('btn-toggle-retrieval');
+ // $latencyNetwork = document.getElementById('latency-network');
+ // $latencyAsr = document.getElementById('latency-asr');
+ // $latencyLlmFirst = document.getElementById('latency-llm-first');
+ // $latencyLlmSentence = document.getElementById('latency-llm-sentence');
+ // $latencyTts = document.getElementById('latency-tts');
+ // $latencyE2e = document.getElementById('latency-e2e');
+ // $btnToggleRecentAudio = document.getElementById('btn-toggle-recent-audio');
+ // $recentAudioCard = document.getElementById('recent-audio-card');
+ // $recentAudioStatus = document.getElementById('recent-audio-status');
 
-const requiredElements = [
-    $btnUploadFile, $fileInput,
-    $streamState, $sessionId, $waveform, $messages, $thoughtContent, $captionContent,
-    $retrievalContent, $panelThought, $panelCaption, $panelRetrieval, $btnToggleThought,
-    $btnToggleCaption, $btnToggleRetrieval, $latencyNetwork, $latencyAsr,
-    $latencyLlmFirst, $latencyLlmSentence, $latencyTts, $latencyE2e,
-    $btnToggleRecentAudio, $recentAudioCard, $recentAudioStatus,
-];
+// const requiredElements = [
+//     $latencyNetwork, $latencyAsr, $latencyLlmFirst, $latencyLlmSentence, $latencyTts, $latencyE2e,
+// ];
 
-if (requiredElements.some((el) => !el)) {
-    console.error('Xtalk page initialization failed: missing required DOM elements.');
-    return;
-}
+// if (requiredElements.some((el) => !el)) {
+//     console.error('Xtalk page initialization failed: missing required DOM elements.');
+//     return;
+// }
 
-canvasCtx = $waveform.getContext('2d');
-if (!canvasCtx) {
-    console.error('Xtalk page initialization failed: unable to get 2d canvas context.');
-    return;
-}
+// canvasCtx = $waveform.getContext('2d');
+// if (!canvasCtx) {
+//     console.error('Xtalk page initialization failed: unable to get 2d canvas context.');
+//     return;
+// }
 
-session.onStateChange((state) => {
-    $streamState.textContent = state.streamState;
-    $sessionId.textContent = state.sessionId || '--';
-    currentStreamState = state.streamState;
+session.onStateChange((sessionSnapshot) => {
+    // state.streamState = session.state?.streamState || sessionSnapshot?.streamState || '--';
+    // state.sessionId = session.state?.sessionId || sessionSnapshot?.sessionId || '--';
 
-    $messages.innerHTML = '';
-    for (const msg of state.messages) {
-        const el = document.createElement('div');
-        el.className = 'message message-' + msg.role;
-        el.textContent = msg.content;
-        $messages.appendChild(el);
-    }
-    $messages.scrollTop = $messages.scrollHeight;
-
-    $thoughtContent.textContent = state.thought || '';
-    $captionContent.textContent = state.caption || '';
-    $retrievalContent.textContent = state.retrieval || '';
-
-    const l = state.latency || {};
-    $latencyNetwork.textContent = l.network ?? '--';
-    $latencyAsr.textContent = l.asr ?? '--';
-    $latencyLlmFirst.textContent = l.llmFirstToken ?? '--';
-    $latencyLlmSentence.textContent = l.llmSentence ?? '--';
-    $latencyTts.textContent = l.ttsFirstChunk ?? '--';
-    const e2eParts = [l.network, l.asr, l.llmSentence, l.ttsFirstChunk];
-    $latencyE2e.textContent = e2eParts.every(v => v != null) ? e2eParts.reduce((a, b) => a + b, 0) : '--';
+    // chatMessages.value = (sessionSnapshot.messages || []).map((msg) => ({
+    //     role: msg?.role || 'assistant',
+    //     content: msg?.content || ''
+    // }));
+    syncStateFromSession(sessionSnapshot);
 });
 
-session.onInputAudioChunk((pcmChunkInt16, sampleRate) => {
-    try {
-        ensureAudioContext();
-        if (!inputAnalyser) {
-            inputAnalyser = audioCtx.createAnalyser();
-            inputAnalyser.fftSize = 1024;
-            inputAnalyser.smoothingTimeConstant = 0.7;
-            inputBufferLength = inputAnalyser.fftSize;
-            inputDataArray = new Uint8Array(inputBufferLength);
-        }
+// session.onInputAudioChunk((pcmChunkInt16, sampleRate) => {
+//     // Input waveform handling is disabled for current scope.
+// });
 
-        const int16 = new Int16Array(pcmChunkInt16);
-        const float32 = new Float32Array(int16.length);
-        for (let i = 0; i < int16.length; i++) {
-            float32[i] = int16[i] / 32768;
-        }
+// session.onOutputAudioChunk((pcmChunkInt16, sampleRate) => {
+//     // Output waveform handling is disabled for current scope.
+// });
 
-        const buffer = audioCtx.createBuffer(1, float32.length, sampleRate);
-        buffer.getChannelData(0).set(float32);
-        const source = audioCtx.createBufferSource();
-        source.buffer = buffer;
-        source.connect(inputAnalyser);
-        const gain = audioCtx.createGain();
-        gain.gain.value = 0;
-        inputAnalyser.connect(gain);
-        gain.connect(audioCtx.destination);
-        source.start();
-        source.addEventListener('ended', () => {
-            try { source.disconnect(); } catch { }
-        });
-    } catch (e) {
-        console.error('Input audio chunk error:', e);
-    }
-});
+// session.onFullAudioChunk((pcmChunkInt16, sampleRate) => {
+//     // Full audio stream handling is disabled for current scope.
+// });
 
-session.onOutputAudioChunk((pcmChunkInt16, sampleRate) => {
-    try {
-        ensureAudioContext();
-        if (!outputAnalyser) {
-            outputAnalyser = audioCtx.createAnalyser();
-            outputAnalyser.fftSize = 1024;
-            outputAnalyser.smoothingTimeConstant = 0.7;
-            outputBufferLength = outputAnalyser.fftSize;
-            outputDataArray = new Uint8Array(outputBufferLength);
-        }
+// setupToggle($btnToggleThought, $panelThought);
+// setupToggle($btnToggleCaption, $panelCaption);
+// setupToggle($btnToggleRetrieval, $panelRetrieval);
 
-        const int16 = new Int16Array(pcmChunkInt16);
-        const float32 = new Float32Array(int16.length);
-        for (let i = 0; i < int16.length; i++) {
-            float32[i] = int16[i] / 32768;
-        }
-
-        const buffer = audioCtx.createBuffer(1, float32.length, sampleRate);
-        buffer.getChannelData(0).set(float32);
-        const source = audioCtx.createBufferSource();
-        source.buffer = buffer;
-        source.connect(outputAnalyser);
-        const gain = audioCtx.createGain();
-        gain.gain.value = 0;
-        outputAnalyser.connect(gain);
-        gain.connect(audioCtx.destination);
-        source.start();
-        source.addEventListener('ended', () => {
-            try { source.disconnect(); } catch { }
-        });
-    } catch (e) {
-        console.error('Output audio chunk error:', e);
-    }
-});
-
-session.onFullAudioChunk((pcmChunkInt16, sampleRate) => {
-    appendRecentFullAudioChunk(pcmChunkInt16, sampleRate);
-    const canRefreshSnapshot = !recentAudioIsPlaying;
-    if (canRefreshSnapshot) {
-        refreshRecentAudioSnapshot();
-    }
-});
-
-setupToggle($btnToggleThought, $panelThought);
-setupToggle($btnToggleCaption, $panelCaption);
-setupToggle($btnToggleRetrieval, $panelRetrieval);
-
-$btnToggleRecentAudio.addEventListener('click', () => {
-    const willOpen = $recentAudioCard.classList.contains('is-hidden');
-    setRecentAudioVisible(willOpen);
-    if (willOpen) {
-        refreshRecentAudioSnapshot(true);
-    }
-});
+// $btnToggleRecentAudio.addEventListener('click', () => {
+//     // Recent audio toggle is disabled for current scope.
+// });
 
 window.addEventListener('resize', () => {
-    resizeCanvas();
+    // resizeCanvas();
 });
 
 window.addEventListener('beforeunload', () => {
-    revokeRecentAudioUrl();
-    destroyRecentAudioContext();
+    // revokeRecentAudioUrl();
+    // destroyRecentAudioContext();
 });
 
-setRecentAudioVisible(false);
+// setRecentAudioVisible(false);
 
 // $voiceSelect.addEventListener('change', (e) => {
 //     const selectedName = e.target.value;
@@ -795,20 +736,20 @@ setRecentAudioVisible(false);
 //     }
 // });
 
-$btnUploadFile.addEventListener('click', () => {
-    $fileInput.click();
-});
+// $btnUploadFile.addEventListener('click', () => {
+//     $fileInput.click();
+// });
 
-$fileInput.addEventListener('change', async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-        await session.uploadFile(file);
-    } catch (err) {
-        alert('Failed to upload file: ' + (err?.message || err));
-    }
-    $fileInput.value = '';
-});
+// $fileInput.addEventListener('change', async (e) => {
+//     const file = e.target.files?.[0];
+//     if (!file) return;
+//     try {
+//         await session.uploadFile(file);
+//     } catch (err) {
+//         alert('Failed to upload file: ' + (err?.message || err));
+//     }
+//     $fileInput.value = '';
+// });
 
 // loadReferenceAudios();
 } catch (e) {
