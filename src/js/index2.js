@@ -1,10 +1,12 @@
 var e,
   t = {};
+/*
 function n() {
   if ("undefined" != typeof window && "undefined" != typeof document)
     return e.Web;
   throw new Error("Unknown platform");
 }
+*/
 ((t.d = (e, n) => {
   for (var a in n)
     t.o(n, a) &&
@@ -12,17 +14,7 @@ function n() {
       Object.defineProperty(e, a, { enumerable: !0, get: n[a] });
 }),
   (t.o = (e, t) => Object.prototype.hasOwnProperty.call(e, t)),
-  (() => {
-    var e;
-    if (("string" == typeof import.meta.url && (e = import.meta.url), !e))
-      throw new Error("Automatic publicPath is not supported in this browser");
-    ((e = e
-      .replace(/^blob:/, "")
-      .replace(/#.*$/, "")
-      .replace(/\?.*$/, "")
-      .replace(/\/[^\/]+$/, "/")),
-      (t.p = e));
-  })(),
+  (t.p = ""),
   (function (e) {
     e[(e.Web = 0)] = "Web";
   })(e || (e = {})));
@@ -689,16 +681,19 @@ function g(t, { inputConfig: a = {}, outputConfig: s = {} } = {}) {
   return {
     open: async () => {
       ((p = (function (t) {
-        if (n() === e.Web) return new c(t, void 0);
-        throw new Error("Unknown platform");
+        // if (n() === e.Web) return new c(t, void 0);
+        // throw new Error("Unknown platform");
+        return new c(t, void 0);
       })(t)),
         (f = (function (t) {
-          if (n() === e.Web) return new u(t);
-          throw new Error("Unknown platform");
+          // if (n() === e.Web) return new u(t);
+          // throw new Error("Unknown platform");
+          return new u(t);
         })(o)),
         (w = (function (t) {
-          if (n() === e.Web) return new d(t);
-          throw new Error("Unknown platform");
+          // if (n() === e.Web) return new d(t);
+          // throw new Error("Unknown platform");
+          return new d(t);
         })(i)),
         p.addEventListener("message", async (e) => {
           if ("string" == typeof e.data) {
@@ -770,4 +765,3 @@ function g(t, { inputConfig: a = {}, outputConfig: s = {} } = {}) {
   };
 }
 export { g as createSession };
-

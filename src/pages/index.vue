@@ -19,8 +19,8 @@
                     </select> -->
                 </view>
                 <view class="upload-btn">
-                    <button id="btn-upload-file">Upload Doc</button>
-                    <input id="file-input" type="file" accept="text/*,.pdf,application/pdf" style="display:none;" />
+                    <!-- <button id="btn-upload-file">Upload Doc</button> -->
+                    <!-- <input id="file-input" type="file" accept="text/*,.pdf,application/pdf" style="display:none;" /> -->
                 </view>
                 <button id="btn-toggle-recent-audio" class="recent-audio-toggle">Recent 60s Audio</button>
             </view>
@@ -43,7 +43,6 @@
                 <view id="recent-audio-player" class="recent-audio-player">
                     <u-button
                         type="primary"
-                        icon="play-circle"
                         :text="recentAudioButtonText"
                         @click="playVoice"
                     ></u-button>
@@ -94,9 +93,10 @@
 
 <script setup lang="ts">
 // @ts-nocheck
-import { Base64 } from 'js-base64'
-import { useRouter } from 'uni-use-router'
+// import { Base64 } from 'js-base64'
+// import { useRouter } from 'uni-use-router'
 import { computed, onMounted, reactive, ref } from 'vue'
+import { createSession } from '../js/index.js'
 
 definePage({
     layout: false,
@@ -118,32 +118,32 @@ let recentAudioCtx = null;
 let recentAudioIsPlaying = false;
 let recentAudioHasSource = false;
 
-// let $voiceSelect = null;
-let $btnUploadFile = null;
-let $fileInput = null;
-// let $streamState = null;
-// let $sessionId = null;
-let $waveform = null;
-// let $messages = null;
-let $thoughtContent = null;
-let $captionContent = null;
-let $retrievalContent = null;
-let $panelThought = null;
-let $panelCaption = null;
-let $panelRetrieval = null;
-let $btnToggleThought = null;
-let $btnToggleCaption = null;
-let $btnToggleRetrieval = null;
-let $latencyNetwork = null;
-let $latencyAsr = null;
-let $latencyLlmFirst = null;
-let $latencyLlmSentence = null;
-let $latencyTts = null;
-let $latencyE2e = null;
-let $btnToggleRecentAudio = null;
-let $recentAudioCard = null;
-let $recentAudioStatus = null;
-let canvasCtx = null;
+// // let $voiceSelect = null;
+// let $btnUploadFile = null;
+// let $fileInput = null;
+// // let $streamState = null;
+// // let $sessionId = null;
+// let $waveform = null;
+// // let $messages = null;
+// let $thoughtContent = null;
+// let $captionContent = null;
+// let $retrievalContent = null;
+// let $panelThought = null;
+// let $panelCaption = null;
+// let $panelRetrieval = null;
+// let $btnToggleThought = null;
+// let $btnToggleCaption = null;
+// let $btnToggleRetrieval = null;
+// let $latencyNetwork = null;
+// let $latencyAsr = null;
+// let $latencyLlmFirst = null;
+// let $latencyLlmSentence = null;
+// let $latencyTts = null;
+// let $latencyE2e = null;
+// let $btnToggleRecentAudio = null;
+// let $recentAudioCard = null;
+// let $recentAudioStatus = null;
+// let canvasCtx = null;
 
 const FULL_AUDIO_CHANNELS = 2;
 const FULL_AUDIO_BYTES_PER_SAMPLE = 2;
@@ -162,7 +162,7 @@ let recentAudioSnapshotDirty = false;
 let availableAudios = [];
 
 // 仿vue-router
-const router = useRouter()
+// const router = useRouter()
 const recentAudioButtonText = ref('播放回复语音')
 const muteButtonText = ref('Mute')
 const chatMessages = ref([])
@@ -183,6 +183,23 @@ const isStartDisabled = ref(false)
 const isStopDisabled = ref(true)
 let session = null
 
+function showUserMessage(message, title = '提示') {
+    const content = String(message ?? '')
+    if (typeof uni !== 'undefined' && typeof uni.showModal === 'function') {
+        uni.showModal({
+            title,
+            content,
+            showCancel: false,
+        })
+        return
+    }
+    if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+        window.alert(content)
+        return
+    }
+    console.warn(`[${title}] ${content}`)
+}
+
 function syncStateFromSession(snapshot = null) {
     const source = snapshot || session?.state || {};
     state.streamState = source.streamState || '--';
@@ -196,12 +213,7 @@ function syncStateFromSession(snapshot = null) {
 }
 
 function getWebSocketURL() {
-    const loc = window.location;
-    const proto = loc?.protocol === 'https:' ? 'wss:' : 'ws:';
-    const origin = loc?.origin || 'http://127.0.0.1:7635';
-    const wsPath = new URL('/ws', origin);
-    wsPath.protocol = proto;
-    return wsPath;
+    return 'ws://127.0.0.1:7635/ws'
 }
 
 /*
@@ -552,7 +564,7 @@ function setupToggle(btn, panel) {
 
 async function handleStart() {
     if (!session) {
-        alert('Session is not initialized yet.')
+        showUserMessage('Session is not initialized yet.')
         return
     }
     try {
@@ -560,13 +572,13 @@ async function handleStart() {
         isStartDisabled.value = true
         isStopDisabled.value = false
     } catch (e) {
-        alert('Failed to start: ' + (e?.message || e))
+        showUserMessage('Failed to start: ' + (e?.message || e), 'Start Error')
     }
 }
 
 async function handleStop() {
     if (!session) {
-        alert('Session is not initialized yet.')
+        showUserMessage('Session is not initialized yet.')
         return
     }
     try {
@@ -574,20 +586,20 @@ async function handleStop() {
         isStartDisabled.value = false
         isStopDisabled.value = true
     } catch (e) {
-        alert('Failed to stop: ' + (e?.message || e))
+        showUserMessage('Failed to stop: ' + (e?.message || e), 'Stop Error')
     }
 }
 
 function toggleMute() {
     if (!session) {
-        alert('Session is not initialized yet.')
+        showUserMessage('Session is not initialized yet.')
         return
     }
     try {
         session.muted = !session.muted
         muteButtonText.value = session.muted ? 'Unmute' : 'Mute'
     } catch (e) {
-        alert('Failed to toggle mute: ' + (e?.message || e))
+        showUserMessage('Failed to toggle mute: ' + (e?.message || e), 'Mute Error')
     }
 }
 
@@ -595,44 +607,19 @@ function playVoice() {
     // Recent audio playback is disabled for current scope.
 }
 
-function jump() {
-    const url = 'https://uni-helper.js.org/vitesse-uni-app/getting-started/introduction'
-    const encodedUrl = Base64.encode(url)
-    router.push({
-        url: '/pages/WebView',
-        query: {
-            url: encodedUrl,
-        },
-    })
-}
-
-async function loadXtalk() {
-    try {
-        return await import("https://unpkg.com/xtalk-client@latest/dist/index.js");
-    } catch (e) {
-        console.log("Failed to load local xtalk-client, falling back to CDN:", e)
-        return await import("../js/index.js");
-    }
-}
-
-// async function loadXtalk() {
-//     try {
-//         // Prefer CDN bundle because it resolves worklet/model asset URLs correctly in H5 runtime.
-//         return await import("https://unpkg.com/xtalk-client@latest/dist/index.js");
-//     } catch (e) {
-//         console.log("Failed to load CDN xtalk-client, falling back to local bundle:", e)
-//         return await import("../js/index.js");
-//     }
+// function jump() {
+//     const url = 'https://uni-helper.js.org/vitesse-uni-app/getting-started/introduction'
+//     const encodedUrl = Base64.encode(url)
+//     router.push({
+//         url: '/pages/WebView',
+//         query: {
+//             url: encodedUrl,
+//         },
+//     })
 // }
 
 onMounted(async () => {
-if (typeof window === 'undefined' || typeof document === 'undefined') {
-    console.warn('Xtalk page currently runs in H5 runtime only.');
-    return;
-}
 try {
-const { createSession } = await loadXtalk();
-
 session = createSession(getWebSocketURL());
 syncStateFromSession();
 // const $btnStart = document.getElementById('btn-start');
@@ -713,14 +700,14 @@ session.onStateChange((sessionSnapshot) => {
 //     // Recent audio toggle is disabled for current scope.
 // });
 
-window.addEventListener('resize', () => {
-    // resizeCanvas();
-});
+// window.addEventListener('resize', () => {
+//     resizeCanvas();
+// });
 
-window.addEventListener('beforeunload', () => {
-    // revokeRecentAudioUrl();
-    // destroyRecentAudioContext();
-});
+// window.addEventListener('beforeunload', () => {
+//     revokeRecentAudioUrl();
+//     destroyRecentAudioContext();
+// });
 
 // setRecentAudioVisible(false);
 

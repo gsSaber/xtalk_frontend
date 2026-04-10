@@ -2,7 +2,7 @@ import { defineManifestConfig } from '@uni-helper/vite-plugin-uni-manifest'
 
 export default defineManifestConfig({
   'name': 'tetris-miniapp',
-  'appid': '',
+  'appid': 'wx0d1f5c41722231ec',
   'description': '',
   'versionName': '1.0.0',
   'versionCode': '100',
@@ -66,7 +66,7 @@ export default defineManifestConfig({
   'quickapp': {},
   /* 小程序特有相关 */
   'mp-weixin': {
-    appid: '',
+    appid: 'wx0d1f5c41722231ec',
     setting: {
       urlCheck: false,
     },
