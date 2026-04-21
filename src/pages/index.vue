@@ -96,7 +96,8 @@
 // import { Base64 } from 'js-base64'
 // import { useRouter } from 'uni-use-router'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { createSession } from '../js/index.js'
+// import { createSession } from '../js/index.js'
+import { createSession } from '@/utils/createSession';
 
 definePage({
     layout: false,
@@ -183,6 +184,7 @@ const isStartDisabled = ref(false)
 const isStopDisabled = ref(true)
 let session = null
 
+console.log(uni ? 'Uni API is available2' : 'Uni API is not available');
 function showUserMessage(message, title = '提示') {
     const content = String(message ?? '')
     if (typeof uni !== 'undefined' && typeof uni.showModal === 'function') {
@@ -213,7 +215,7 @@ function syncStateFromSession(snapshot = null) {
 }
 
 function getWebSocketURL() {
-    return 'ws://127.0.0.1:7635/ws'
+    return 'ws://10.180.84.125:7635/ws'
 }
 
 /*

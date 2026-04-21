@@ -6,9 +6,11 @@ import UniHelperPages from '@uni-helper/vite-plugin-uni-pages'
 import UniPlatformModifier from '@uni-helper/vite-plugin-uni-platform-modifier'
 import UnoCSS from 'unocss/vite'
 import AutoImport from 'unplugin-auto-import/vite'
-import { defineConfig } from 'vite'
-import UniPolyfill from 'vite-plugin-uni-polyfill'
+import { copyFile, mkdir } from 'node:fs/promises'
+import path from 'node:path'
+import { defineConfig, type Plugin, type ResolvedConfig } from 'vite'
 import vueDevTools from 'vite-plugin-vue-devtools'
+
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -16,11 +18,11 @@ export default defineConfig({
         port: 7634,
         proxy: {
         '/api': {
-          target: 'http://127.0.0.1:7635',
+          target: 'http://10.180.84.125:7635',
           changeOrigin: true,
         },
         '/ws': {
-          target: 'ws://127.0.0.1:7635',
+          target: 'ws://10.180.84.125:7635',
           ws: true
         }
       },
@@ -42,7 +44,6 @@ export default defineConfig({
     // https://uni-helper.js.org/plugin-uni
     Uni(),
     UniPlatformModifier(),
-    UniPolyfill(),
     // https://github.com/antfu/unplugin-auto-import
     AutoImport({
       imports: ['vue', '@vueuse/core', 'uni-app'],
@@ -65,5 +66,8 @@ export default defineConfig({
         silenceDeprecations: ['legacy-js-api', 'color-functions', 'import'],
       },
     },
+  },
+  build: {
+    sourcemap: true,
   },
 })

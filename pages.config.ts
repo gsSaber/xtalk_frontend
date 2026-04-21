@@ -10,7 +10,16 @@ export default defineUniPages({
       '^u-([^-].*)': 'uview-plus/components/u-$1/u-$1.vue',
     },
   },
-  pages: [],
+  pages: [
+    {
+      path: 'pages/index',
+      type: 'home',
+      layout: false,
+      style: {
+        navigationStyle: 'custom',
+      },
+    }
+  ],
   globalStyle: {
     backgroundColor: '@bgColor',
     backgroundColorBottom: '@bgColorBottom',
