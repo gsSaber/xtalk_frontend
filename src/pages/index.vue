@@ -95,31 +95,27 @@
 // @ts-nocheck
 // import { Base64 } from 'js-base64'
 // import { useRouter } from 'uni-use-router'
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 // import { createSession } from '../js/index.js'
 import { createSession } from '@/utils/createSession';
+import { Platform, getPlatform } from '@/utils/createSession/utils';
+import { createWaveformController } from '@/utils/waveform/core';
+import { createWebWaveformRenderer } from '@/utils/waveform/web';
+import { createMpWaveformRenderer } from '@/utils/waveform/mp';
 
 definePage({
     layout: false,
     style: { navigationStyle: 'custom' },
 })
 
-let audioCtx = null;
-let inputAnalyser = null;
-let outputAnalyser = null;
-let inputMonitorGain = null;
-let outputMonitorGain = null;
-let inputDataArray = null;
-let outputDataArray = null;
-let inputBufferLength = 0;
-let outputBufferLength = 0;
-let rafId = null;
-let isActive = false;
-let currentStreamState = 'idle';
 let recentAudioObjectUrl = null;
 let recentAudioCtx = null;
 let recentAudioIsPlaying = false;
 let recentAudioHasSource = false;
+let waveformController = null;
+let waveformResizeHandler = null;
+const platform = getPlatform();
+const componentInstance = getCurrentInstance()?.proxy;
 
 // // let $voiceSelect = null;
 // let $btnUploadFile = null;
@@ -146,18 +142,10 @@ let $waveform = null;
 // let $btnToggleRecentAudio = null;
 // let $recentAudioCard = null;
 // let $recentAudioStatus = null;
-let canvasCtx = null;
-
 const FULL_AUDIO_CHANNELS = 2;
 const FULL_AUDIO_BYTES_PER_SAMPLE = 2;
 const FULL_AUDIO_FRAME_BYTES = FULL_AUDIO_CHANNELS * FULL_AUDIO_BYTES_PER_SAMPLE;
 const MAX_RECENT_AUDIO_SECONDS = 60;
-const STATE_COLORS = {
-    idle: '#6b7280',
-    listening: '#34d399',
-    processing: '#fbbf24',
-    speaking: '#93c5fd'
-};
 let recentFullAudioSampleRate = 48000;
 let recentFullAudioChunks = [];
 let recentFullAudioTotalBytes = 0;
@@ -224,156 +212,48 @@ function getWebSocketURL() {
     return 'wss://xtalk.sjtuxlance.com/ws'
 }
 
-function ensureAudioContext() {
-    if (!audioCtx) {
-        const AC = window.AudioContext || window.webkitAudioContext;
-        audioCtx = new AC();
-    }
-    return audioCtx;
-}
+async function initWaveform() {
+    await nextTick();
 
-function ensureInputAnalyser() {
-    ensureAudioContext();
-    if (!inputAnalyser) {
-        inputAnalyser = audioCtx.createAnalyser();
-        inputAnalyser.fftSize = 1024;
-        inputAnalyser.smoothingTimeConstant = 0.7;
-        inputBufferLength = inputAnalyser.fftSize;
-        inputDataArray = new Uint8Array(inputBufferLength);
-    }
-    if (!inputMonitorGain) {
-        inputMonitorGain = audioCtx.createGain();
-        inputMonitorGain.gain.value = 0;
-        inputAnalyser.connect(inputMonitorGain);
-        inputMonitorGain.connect(audioCtx.destination);
-    }
-    return inputAnalyser;
-}
+    if (platform === Platform.Web) {
+        const waveformNode = document.getElementById('waveform');
+        $waveform = waveformNode instanceof HTMLCanvasElement
+            ? waveformNode
+            : waveformNode?.querySelector?.('canvas');
 
-function ensureOutputAnalyser() {
-    ensureAudioContext();
-    if (!outputAnalyser) {
-        outputAnalyser = audioCtx.createAnalyser();
-        outputAnalyser.fftSize = 1024;
-        outputAnalyser.smoothingTimeConstant = 0.7;
-        outputBufferLength = outputAnalyser.fftSize;
-        outputDataArray = new Uint8Array(outputBufferLength);
-    }
-    if (!outputMonitorGain) {
-        outputMonitorGain = audioCtx.createGain();
-        outputMonitorGain.gain.value = 0;
-        outputAnalyser.connect(outputMonitorGain);
-        outputMonitorGain.connect(audioCtx.destination);
-    }
-    return outputAnalyser;
-}
-
-function playPcmChunkThroughAnalyser(pcmChunkInt16, sampleRate, analyser) {
-    if (!audioCtx) {
-        return;
-    }
-    const int16 = new Int16Array(pcmChunkInt16);
-    const float32 = new Float32Array(int16.length);
-    for (let i = 0; i < int16.length; i++) {
-        float32[i] = int16[i] / 32768;
-    }
-
-    const buffer = audioCtx.createBuffer(1, float32.length, sampleRate);
-    buffer.getChannelData(0).set(float32);
-    const source = audioCtx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(analyser);
-    source.onended = () => {
-        source.onended = null;
-        try {
-            source.disconnect();
-        } catch {
+        if (!$waveform) {
+            throw new Error('Unable to find waveform canvas element.');
         }
-    };
-    source.start();
-}
 
-function resizeCanvas() {
-    const dpr = window.devicePixelRatio || 1;
-    const cssWidth = Math.max(1, Math.floor($waveform.clientWidth));
-    const cssHeight = Math.max(1, Math.floor($waveform.clientHeight));
-    const width = Math.max(1, Math.floor(cssWidth * dpr));
-    const height = Math.max(1, Math.floor(cssHeight * dpr));
-    if ($waveform.width !== width || $waveform.height !== height) {
-        $waveform.width = width;
-        $waveform.height = height;
-    }
-    canvasCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-}
+        waveformController = createWaveformController({
+            renderer: createWebWaveformRenderer($waveform),
+        });
 
-function drawWaveform() {
-    if (!isActive) return;
-    rafId = requestAnimationFrame(drawWaveform);
-
-    const w = Math.max(1, $waveform.clientWidth);
-    const h = Math.max(1, $waveform.clientHeight);
-    const midY = h;
-
-    canvasCtx.fillStyle = '#0f172a';
-    canvasCtx.fillRect(0, 0, w, h);
-
-    canvasCtx.strokeStyle = '#1f2937';
-    canvasCtx.lineWidth = 1;
-    canvasCtx.beginPath();
-    canvasCtx.moveTo(0, midY);
-    canvasCtx.lineTo(w, midY);
-    canvasCtx.stroke();
-
-    const color = STATE_COLORS[currentStreamState] || '#6b7280';
-    let dataArray = null;
-
-    if (currentStreamState === 'speaking' && outputAnalyser && outputDataArray) {
-        outputAnalyser.getByteTimeDomainData(outputDataArray);
-        dataArray = outputDataArray;
-        bufferLength = outputBufferLength;
-    } else if (inputAnalyser && inputDataArray) {
-        inputAnalyser.getByteTimeDomainData(inputDataArray);
-        dataArray = inputDataArray;
-        bufferLength = inputBufferLength;
+        waveformResizeHandler = () => {
+            Promise.resolve(waveformController?.resize()).catch(() => {});
+        };
+        window.addEventListener('resize', waveformResizeHandler);
+    } else {
+        waveformController = createWaveformController({
+            renderer: createMpWaveformRenderer({
+                canvasId: 'waveform',
+                selector: '#waveform',
+                componentInstance,
+            }),
+        });
     }
 
-    if (dataArray && bufferLength) {
-        const sliceWidth = w / bufferLength;
-        canvasCtx.strokeStyle = color;
-        canvasCtx.lineWidth = 2;
-        canvasCtx.beginPath();
-        let x = 0;
-        for (let i = 0; i < bufferLength; i++) {
-            const v = dataArray[i] / 128.0;
-            const y = (v * h) / 2;
-            if (i === 0) canvasCtx.moveTo(x, y);
-            else canvasCtx.lineTo(x, y);
-            x += sliceWidth;
-        }
-        canvasCtx.lineTo(w, midY);
-        canvasCtx.stroke();
-    }
+    waveformController.setState(state.streamState === '--' ? 'idle' : state.streamState);
+    await waveformController.renderNow();
 }
 
-function startVisualization() {
-    if (isActive) return;
-    ensureAudioContext();
-    resizeCanvas();
-    isActive = true;
-    drawWaveform();
+async function startVisualization() {
+    await waveformController?.start();
 }
 
-function stopVisualization() {
-    if (!isActive) return;
-    isActive = false;
-    if (rafId) {
-        cancelAnimationFrame(rafId);
-        rafId = null;
-    }
-    const w = $waveform.width;
-    const h = $waveform.height;
-    canvasCtx.fillStyle = '#0f172a';
-    canvasCtx.fillRect(0, 0, w, h);
+async function stopVisualization() {
+    waveformController?.setState('idle');
+    await waveformController?.stop();
 }
 
 /*
@@ -641,7 +521,7 @@ async function handleStart() {
     }
     try {
         await session.open()
-        startVisualization()
+        await startVisualization()
         isStartDisabled.value = true
         isStopDisabled.value = false
     } catch (e) {
@@ -656,7 +536,7 @@ async function handleStop() {
     }
     try {
         await session.close()
-        stopVisualization()
+        await stopVisualization()
         isStartDisabled.value = false
         isStopDisabled.value = true
     } catch (e) {
@@ -696,6 +576,7 @@ onMounted(async () => {
 try {
 session = createSession(getWebSocketURL());
 syncStateFromSession();
+await initWaveform();
 // const $btnStart = document.getElementById('btn-start');
 // const $btnStop = document.getElementById('btn-stop');
 // const $btnMute = document.getElementById('btn-mute');
@@ -704,10 +585,6 @@ syncStateFromSession();
  // $fileInput = document.getElementById('file-input');
  // $streamState = document.getElementById('stream-state');
  // $sessionId = document.getElementById('session-id');
-const $waveformNode = document.getElementById('waveform');
-$waveform = $waveformNode instanceof HTMLCanvasElement
-    ? $waveformNode
-    : $waveformNode?.querySelector?.('canvas');
 // $messages = document.getElementById('messages');
 // $thoughtContent = document.getElementById('thought-content');
 // $captionContent = document.getElementById('caption-content');
@@ -737,13 +614,6 @@ $waveform = $waveformNode instanceof HTMLCanvasElement
 //     return;
 // }
 
-canvasCtx = $waveform.getContext('2d');
-if (!canvasCtx) {
-    console.error('Xtalk page initialization failed: unable to get 2d canvas context.');
-    return;
-}
-resizeCanvas();
-
 session.onStateChange((sessionSnapshot) => {
     // state.streamState = session.state?.streamState || sessionSnapshot?.streamState || '--';
     // state.sessionId = session.state?.sessionId || sessionSnapshot?.sessionId || '--';
@@ -753,22 +623,20 @@ session.onStateChange((sessionSnapshot) => {
     //     content: msg?.content || ''
     // }));
     syncStateFromSession(sessionSnapshot);
-    currentStreamState = sessionSnapshot?.streamState || 'idle';
+    waveformController?.setState(sessionSnapshot?.streamState || 'idle');
 });
 
-session.onInputAudioChunk((pcmChunkInt16, sampleRate) => {
+session.onInputAudioChunk((pcmChunkInt16) => {
     try {
-        const analyser = ensureInputAnalyser();
-        playPcmChunkThroughAnalyser(pcmChunkInt16, sampleRate, analyser);
+        waveformController?.pushInputChunk(pcmChunkInt16);
     } catch (e) {
         console.error('Input audio chunk error:', e);
     }
 });
 
-session.onOutputAudioChunk((pcmChunkInt16, sampleRate) => {
+session.onOutputAudioChunk((pcmChunkInt16) => {
     try {
-        const analyser = ensureOutputAnalyser();
-        playPcmChunkThroughAnalyser(pcmChunkInt16, sampleRate, analyser);
+        waveformController?.pushOutputChunk(pcmChunkInt16);
     } catch (e) {
         console.error('Output audio chunk error:', e);
     }
@@ -785,10 +653,6 @@ session.onOutputAudioChunk((pcmChunkInt16, sampleRate) => {
 // $btnToggleRecentAudio.addEventListener('click', () => {
 //     // Recent audio toggle is disabled for current scope.
 // });
-
-window.addEventListener('resize', () => {
-    resizeCanvas();
-});
 
 // window.addEventListener('beforeunload', () => {
 //     revokeRecentAudioUrl();
@@ -831,16 +695,11 @@ window.addEventListener('resize', () => {
 });
 
 onBeforeUnmount(() => {
-    stopVisualization();
-    if (audioCtx && typeof audioCtx.close === 'function') {
-        audioCtx.close().catch?.(() => {});
+    if (waveformResizeHandler && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+        window.removeEventListener('resize', waveformResizeHandler);
     }
-    audioCtx = null;
-    inputAnalyser = null;
-    outputAnalyser = null;
-    inputMonitorGain = null;
-    outputMonitorGain = null;
-    inputDataArray = null;
-    outputDataArray = null;
+    waveformResizeHandler = null;
+    waveformController?.destroy?.().catch?.(() => {});
+    waveformController = null;
 });
 </script>
