@@ -33,7 +33,6 @@ function createSession(
     let inputAudioSession: ReturnType<typeof createInputAudioSession>;
     let outputAudioSession: ReturnType<typeof createOutputAudioSession>;
     let manualMuted = false;
-    let playbackMuted = false;
     let accessToken: string | null = null;
 
     let inputAudioChunkCallback: ((pcmChunkInt16: ArrayBuffer, sampleRate: number) => void) = (_chunk, _sr) => { };
@@ -121,7 +120,7 @@ function createSession(
     }
 
     function applyInputMuteState() {
-        inputAudioSession.muted = manualMuted || playbackMuted;
+        inputAudioSession.muted = manualMuted;
     }
 
     function initialize(authenticatedWebsocketURL: string | URL) {
@@ -151,10 +150,6 @@ function createSession(
                 const message: { action: string, data: any } = JSON.parse(event.data);
                 try {
                     await actionHandler.handleAction(message.action, message.data, websocket, conversation, outputAudioSession);
-                    if (message.action === "stop_tts" || message.action === "pause_tts" || message.action === "tts_finished") {
-                        playbackMuted = false;
-                        applyInputMuteState();
-                    }
                 } catch (error) {
                     //TODO: Handle unknown action error
                 }
@@ -187,8 +182,6 @@ function createSession(
         // Bind audio output handling
         outputAudioSession.onChunkStarted(async (audioChunk) => {
             outputAudioChunkCallback(audioChunk, resolvedOutputConfig.sampleRate);
-            playbackMuted = true;
-            applyInputMuteState();
             if (websocket.ready()) {
                 await actionHandler.handleAction("client_audio_chunk_started", null, websocket, conversation, outputAudioSession);
             }
@@ -199,8 +192,6 @@ function createSession(
             }
         });
         outputAudioSession.onAllChunksPlayed(async () => {
-            playbackMuted = false;
-            applyInputMuteState();
             if (websocket.ready()) {
                 await actionHandler.handleAction("client_audio_playback_finished", null, websocket, conversation, outputAudioSession);
             }
@@ -229,7 +220,6 @@ function createSession(
             await inputAudioSession.close();
             await outputAudioSession.close();
             websocket.close();
-            playbackMuted = false;
             conversation.state.streamState = 'idle';
         },
         onStateChange: (callback: (state: Conversation["state"]) => void) => {

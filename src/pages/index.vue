@@ -95,7 +95,7 @@
 // @ts-nocheck
 // import { Base64 } from 'js-base64'
 // import { useRouter } from 'uni-use-router'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 // import { createSession } from '../js/index.js'
 import { createSession } from '@/utils/createSession';
 
@@ -107,6 +107,8 @@ definePage({
 let audioCtx = null;
 let inputAnalyser = null;
 let outputAnalyser = null;
+let inputMonitorGain = null;
+let outputMonitorGain = null;
 let inputDataArray = null;
 let outputDataArray = null;
 let inputBufferLength = 0;
@@ -124,7 +126,7 @@ let recentAudioHasSource = false;
 // let $fileInput = null;
 // // let $streamState = null;
 // // let $sessionId = null;
-// let $waveform = null;
+let $waveform = null;
 // // let $messages = null;
 // let $thoughtContent = null;
 // let $captionContent = null;
@@ -144,7 +146,7 @@ let recentAudioHasSource = false;
 // let $btnToggleRecentAudio = null;
 // let $recentAudioCard = null;
 // let $recentAudioStatus = null;
-// let canvasCtx = null;
+let canvasCtx = null;
 
 const FULL_AUDIO_CHANNELS = 2;
 const FULL_AUDIO_BYTES_PER_SAMPLE = 2;
@@ -222,7 +224,6 @@ function getWebSocketURL() {
     return 'wss://xtalk.sjtuxlance.com/ws'
 }
 
-/*
 function ensureAudioContext() {
     if (!audioCtx) {
         const AC = window.AudioContext || window.webkitAudioContext;
@@ -231,23 +232,87 @@ function ensureAudioContext() {
     return audioCtx;
 }
 
+function ensureInputAnalyser() {
+    ensureAudioContext();
+    if (!inputAnalyser) {
+        inputAnalyser = audioCtx.createAnalyser();
+        inputAnalyser.fftSize = 1024;
+        inputAnalyser.smoothingTimeConstant = 0.7;
+        inputBufferLength = inputAnalyser.fftSize;
+        inputDataArray = new Uint8Array(inputBufferLength);
+    }
+    if (!inputMonitorGain) {
+        inputMonitorGain = audioCtx.createGain();
+        inputMonitorGain.gain.value = 0;
+        inputAnalyser.connect(inputMonitorGain);
+        inputMonitorGain.connect(audioCtx.destination);
+    }
+    return inputAnalyser;
+}
+
+function ensureOutputAnalyser() {
+    ensureAudioContext();
+    if (!outputAnalyser) {
+        outputAnalyser = audioCtx.createAnalyser();
+        outputAnalyser.fftSize = 1024;
+        outputAnalyser.smoothingTimeConstant = 0.7;
+        outputBufferLength = outputAnalyser.fftSize;
+        outputDataArray = new Uint8Array(outputBufferLength);
+    }
+    if (!outputMonitorGain) {
+        outputMonitorGain = audioCtx.createGain();
+        outputMonitorGain.gain.value = 0;
+        outputAnalyser.connect(outputMonitorGain);
+        outputMonitorGain.connect(audioCtx.destination);
+    }
+    return outputAnalyser;
+}
+
+function playPcmChunkThroughAnalyser(pcmChunkInt16, sampleRate, analyser) {
+    if (!audioCtx) {
+        return;
+    }
+    const int16 = new Int16Array(pcmChunkInt16);
+    const float32 = new Float32Array(int16.length);
+    for (let i = 0; i < int16.length; i++) {
+        float32[i] = int16[i] / 32768;
+    }
+
+    const buffer = audioCtx.createBuffer(1, float32.length, sampleRate);
+    buffer.getChannelData(0).set(float32);
+    const source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(analyser);
+    source.onended = () => {
+        source.onended = null;
+        try {
+            source.disconnect();
+        } catch {
+        }
+    };
+    source.start();
+}
+
 function resizeCanvas() {
     const dpr = window.devicePixelRatio || 1;
-    const { clientWidth, clientHeight } = $waveform;
-    const width = Math.max(1, Math.floor(clientWidth * dpr));
-    const height = Math.max(1, Math.floor(clientHeight * dpr));
+    const cssWidth = Math.max(1, Math.floor($waveform.clientWidth));
+    const cssHeight = Math.max(1, Math.floor($waveform.clientHeight));
+    const width = Math.max(1, Math.floor(cssWidth * dpr));
+    const height = Math.max(1, Math.floor(cssHeight * dpr));
     if ($waveform.width !== width || $waveform.height !== height) {
         $waveform.width = width;
         $waveform.height = height;
     }
+    canvasCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
 function drawWaveform() {
     if (!isActive) return;
     rafId = requestAnimationFrame(drawWaveform);
 
-    const w = $waveform.width;
-    const h = $waveform.height;
+    const w = Math.max(1, $waveform.clientWidth);
+    const h = Math.max(1, $waveform.clientHeight);
+    const midY = h;
 
     canvasCtx.fillStyle = '#0f172a';
     canvasCtx.fillRect(0, 0, w, h);
@@ -255,13 +320,12 @@ function drawWaveform() {
     canvasCtx.strokeStyle = '#1f2937';
     canvasCtx.lineWidth = 1;
     canvasCtx.beginPath();
-    canvasCtx.moveTo(0, h / 2);
-    canvasCtx.lineTo(w, h / 2);
+    canvasCtx.moveTo(0, midY);
+    canvasCtx.lineTo(w, midY);
     canvasCtx.stroke();
 
     const color = STATE_COLORS[currentStreamState] || '#6b7280';
     let dataArray = null;
-    let bufferLength = 0;
 
     if (currentStreamState === 'speaking' && outputAnalyser && outputDataArray) {
         outputAnalyser.getByteTimeDomainData(outputDataArray);
@@ -286,7 +350,7 @@ function drawWaveform() {
             else canvasCtx.lineTo(x, y);
             x += sliceWidth;
         }
-        canvasCtx.lineTo(w, h / 2);
+        canvasCtx.lineTo(w, midY);
         canvasCtx.stroke();
     }
 }
@@ -311,6 +375,8 @@ function stopVisualization() {
     canvasCtx.fillStyle = '#0f172a';
     canvasCtx.fillRect(0, 0, w, h);
 }
+
+/*
 
 function updateRecentAudioStatus(text) {
     $recentAudioStatus.textContent = text;
@@ -575,6 +641,7 @@ async function handleStart() {
     }
     try {
         await session.open()
+        startVisualization()
         isStartDisabled.value = true
         isStopDisabled.value = false
     } catch (e) {
@@ -589,6 +656,7 @@ async function handleStop() {
     }
     try {
         await session.close()
+        stopVisualization()
         isStartDisabled.value = false
         isStopDisabled.value = true
     } catch (e) {
@@ -636,10 +704,10 @@ syncStateFromSession();
  // $fileInput = document.getElementById('file-input');
  // $streamState = document.getElementById('stream-state');
  // $sessionId = document.getElementById('session-id');
-// const $waveformNode = document.getElementById('waveform');
-// $waveform = $waveformNode instanceof HTMLCanvasElement
-//    ? $waveformNode
-//    : $waveformNode?.querySelector?.('canvas');
+const $waveformNode = document.getElementById('waveform');
+$waveform = $waveformNode instanceof HTMLCanvasElement
+    ? $waveformNode
+    : $waveformNode?.querySelector?.('canvas');
 // $messages = document.getElementById('messages');
 // $thoughtContent = document.getElementById('thought-content');
 // $captionContent = document.getElementById('caption-content');
@@ -669,11 +737,12 @@ syncStateFromSession();
 //     return;
 // }
 
-// canvasCtx = $waveform.getContext('2d');
-// if (!canvasCtx) {
-//     console.error('Xtalk page initialization failed: unable to get 2d canvas context.');
-//     return;
-// }
+canvasCtx = $waveform.getContext('2d');
+if (!canvasCtx) {
+    console.error('Xtalk page initialization failed: unable to get 2d canvas context.');
+    return;
+}
+resizeCanvas();
 
 session.onStateChange((sessionSnapshot) => {
     // state.streamState = session.state?.streamState || sessionSnapshot?.streamState || '--';
@@ -684,15 +753,26 @@ session.onStateChange((sessionSnapshot) => {
     //     content: msg?.content || ''
     // }));
     syncStateFromSession(sessionSnapshot);
+    currentStreamState = sessionSnapshot?.streamState || 'idle';
 });
 
-// session.onInputAudioChunk((pcmChunkInt16, sampleRate) => {
-//     // Input waveform handling is disabled for current scope.
-// });
+session.onInputAudioChunk((pcmChunkInt16, sampleRate) => {
+    try {
+        const analyser = ensureInputAnalyser();
+        playPcmChunkThroughAnalyser(pcmChunkInt16, sampleRate, analyser);
+    } catch (e) {
+        console.error('Input audio chunk error:', e);
+    }
+});
 
-// session.onOutputAudioChunk((pcmChunkInt16, sampleRate) => {
-//     // Output waveform handling is disabled for current scope.
-// });
+session.onOutputAudioChunk((pcmChunkInt16, sampleRate) => {
+    try {
+        const analyser = ensureOutputAnalyser();
+        playPcmChunkThroughAnalyser(pcmChunkInt16, sampleRate, analyser);
+    } catch (e) {
+        console.error('Output audio chunk error:', e);
+    }
+});
 
 // session.onFullAudioChunk((pcmChunkInt16, sampleRate) => {
 //     // Full audio stream handling is disabled for current scope.
@@ -706,9 +786,9 @@ session.onStateChange((sessionSnapshot) => {
 //     // Recent audio toggle is disabled for current scope.
 // });
 
-// window.addEventListener('resize', () => {
-//     resizeCanvas();
-// });
+window.addEventListener('resize', () => {
+    resizeCanvas();
+});
 
 // window.addEventListener('beforeunload', () => {
 //     revokeRecentAudioUrl();
@@ -748,5 +828,19 @@ session.onStateChange((sessionSnapshot) => {
 } catch (e) {
     console.error('Xtalk page init failed:', e);
 }
+});
+
+onBeforeUnmount(() => {
+    stopVisualization();
+    if (audioCtx && typeof audioCtx.close === 'function') {
+        audioCtx.close().catch?.(() => {});
+    }
+    audioCtx = null;
+    inputAnalyser = null;
+    outputAnalyser = null;
+    inputMonitorGain = null;
+    outputMonitorGain = null;
+    inputDataArray = null;
+    outputDataArray = null;
 });
 </script>
