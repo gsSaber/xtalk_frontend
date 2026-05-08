@@ -5,7 +5,6 @@
 
 type _LocationUrl =
   "/pages/index" |
-  "/pages/test" |
   "/pages/WebView";
 
 interface NavigateToOptions {

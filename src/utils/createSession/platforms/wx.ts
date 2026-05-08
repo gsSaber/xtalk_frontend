@@ -568,223 +568,215 @@ class WxInputAudioSession extends BaseInputAudioSession {
     }
 }
 
+function createPausableTimeout(
+    callback: () => void,
+    delay: number
+): {
+    pause: () => void;
+    resume: () => void;
+    cancel: () => void;
+} {
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    let startTime = 0;
+    let remaining = delay;
+    let running = false;
+    let cancelled = false;
+
+    function start(ms: number): void {
+        startTime = Date.now();
+        running = true;
+        timerId = setTimeout(() => {
+            running = false;
+            timerId = null;
+            remaining = 0;
+            if (!cancelled) {
+                callback();
+            }
+        }, ms);
+    }
+
+    function pause(): void {
+        if (!running || timerId === null) {
+            return;
+        }
+        clearTimeout(timerId);
+        timerId = null;
+        remaining -= Date.now() - startTime;
+        running = false;
+    }
+
+    function resume(): void {
+        if (running || cancelled || remaining <= 0) {
+            return;
+        }
+        start(remaining);
+    }
+
+    function cancel(): void {
+        if (timerId !== null) {
+            clearTimeout(timerId);
+            timerId = null;
+        }
+        running = false;
+        cancelled = true;
+        remaining = 0;
+    }
+
+    start(delay);
+
+    return {
+        pause,
+        resume,
+        cancel,
+    };
+}
+
 class WxOutputAudioSession extends BaseOutputAudioSession {
-    readonly PLAYBACK_FINISH_GRACE_MS = 400;
-    private config: WxOutputAudioSessionConfig;
-    private sampleRate: number;
-    private player: any = null;
+    private audioContext: any = null;
+    private audioBufferSources: any[] = [];
+    private audioTimeToPlay = 0;
+    private audioChunkStartedTimeouts: ReturnType<typeof createPausableTimeout>[] = [];
+    private audioChunksPaused: ArrayBuffer[] = [];
+    readonly PRESTART_LEAD_MS = 40;
     private opened = false;
-    private paused = false;
-    private queue: ArrayBuffer[] = [];
-    private currentBatch: ArrayBuffer[] = [];
-    private playing = false;
-    private playbackFinishedTimer: ReturnType<typeof setTimeout> | null = null;
 
     constructor(config: WxOutputAudioSessionConfig) {
         super();
         this.config = { ...config };
-        this.sampleRate = typeof config.sampleRate === "number" ? config.sampleRate : 48000;
     }
 
     async open(): Promise<void> {
         if (this.opened) {
             throw new Error("Session already started");
         }
-        const uniApi = typeof uni !== "undefined" ? uni : undefined;
-        if (!uniApi || typeof uniApi.createInnerAudioContext !== "function") {
-            throw new Error("uni.createInnerAudioContext is not available in current environment");
+        const wxApi = typeof wx !== "undefined" ? wx : undefined;
+        if (!wxApi || typeof wxApi.createWebAudioContext !== "function") {
+            throw new Error("wx.createWebAudioContext is not available in current environment");
         }
-        this.player = uniApi.createInnerAudioContext();
-        this.player.autoplay = false;
-        this.player.obeyMuteSwitch = false;
-        this.player.onEnded(() => {
-            const playedBatch = this.currentBatch;
-            this.currentBatch = [];
-            this.playing = false;
-            for (let i = 0; i < playedBatch.length; i++) {
-                this.chunkPlayedCallback(playedBatch[i]!);
-            }
-            if (this.queue.length === 0) {
-                this.schedulePlaybackFinishedCheck();
-            }
-            this.playNext();
-        });
-        this.player.onError(() => {
-            this.cancelPlaybackFinishedCheck();
-            this.currentBatch = [];
-            this.playing = false;
-            this.playNext();
-        });
+        this.audioContext = wxApi.createWebAudioContext();
+        await this.audioContext.resume();
         this.opened = true;
     }
 
     async close(): Promise<void> {
-        if (!this.opened) {
+        if (!this.audioContext || !this.opened) {
             throw new Error("Session not started");
         }
         await this.stop();
-        this.cancelPlaybackFinishedCheck();
-        if (this.player && typeof this.player.destroy === "function") {
-            this.player.destroy();
-        }
-        this.player = null;
+        await this.audioContext.close();
+        this.audioContext = null;
+        this.audioTimeToPlay = 0;
         this.opened = false;
     }
 
     async pause(): Promise<void> {
-        if (!this.opened) {
+        if (!this.audioContext || !this.opened) {
             throw new Error("Session not started");
         }
-        if (this.paused) {
+        if (this.audioContext.state === "suspended") {
             throw new Error("Session already paused");
         }
-        this.paused = true;
-        if (this.player && typeof this.player.pause === "function") {
-            this.player.pause();
-        }
+        this.audioChunkStartedTimeouts.forEach((timeout) => timeout.pause());
+        await this.audioContext.suspend();
     }
 
     async resume(): Promise<void> {
-        if (!this.opened) {
+        if (!this.audioContext || !this.opened) {
             throw new Error("Session not started");
         }
-        if (!this.paused) {
+        if (this.audioContext.state === "running") {
             throw new Error("Session not paused");
         }
-        this.paused = false;
-        if (this.player && this.playing && typeof this.player.play === "function") {
-            this.player.play();
-            return;
+        this.audioChunkStartedTimeouts.forEach((timeout) => timeout.resume());
+        await this.audioContext.resume();
+        for (const chunk of this.audioChunksPaused) {
+            await this.pushAudioChunk(chunk);
         }
-        this.playNext();
+        this.audioChunksPaused.length = 0;
     }
 
     async stop(): Promise<void> {
-        this.cancelPlaybackFinishedCheck();
-        this.queue = [];
-        this.currentBatch = [];
-        this.playing = false;
-        this.paused = false;
-        if (this.player && typeof this.player.stop === "function") {
-            this.player.stop();
-        }
+        this.audioChunkStartedTimeouts.forEach((timeout) => timeout.cancel());
+        this.audioChunkStartedTimeouts.length = 0;
+        this.audioBufferSources.forEach((source) => {
+            source.onended = null;
+            if (typeof source.stop === "function") {
+                source.stop(0);
+            }
+            if (typeof source.disconnect === "function") {
+                source.disconnect();
+            }
+        });
+        this.audioBufferSources.length = 0;
+        this.audioTimeToPlay = 0;
+        this.audioChunksPaused.length = 0;
     }
 
     async pushAudioChunk(pcmChunkInt16: ArrayBuffer): Promise<void> {
-        if (!this.opened) {
+        if (!this.audioContext || !this.opened) {
             throw new Error("Session not started");
         }
         if (!(pcmChunkInt16 instanceof ArrayBuffer) || pcmChunkInt16.byteLength === 0) {
             return;
         }
-        this.cancelPlaybackFinishedCheck();
-        this.queue.push(pcmChunkInt16.slice(0));
-        this.playNext();
-    }
-
-    private playNext(): void {
-        if (!this.opened || this.paused || this.playing || this.queue.length === 0 || !this.player) {
+        if (this.audioContext.state === "suspended") {
+            this.audioChunksPaused.push(pcmChunkInt16.slice(0));
             return;
         }
-        const batch = this.collectQueuedChunks();
-        if (batch.length === 0) {
+        const int16 = new Int16Array(pcmChunkInt16);
+        if (int16.length === 0) {
             return;
         }
-        this.currentBatch = batch;
-        this.chunkStartedCallback(batch[0]!);
-        const wavDataUri = this.pcmToWavDataUri(this.concatPcmChunks(batch), this.sampleRate);
-        this.player.src = wavDataUri;
-        this.playing = true;
-        this.player.play();
-    }
+        const float32 = new Float32Array(int16.length);
+        int16.forEach((value, index) => {
+            float32[index] = value / 32768;
+        });
 
-    private collectQueuedChunks(): ArrayBuffer[] {
-        const batch: ArrayBuffer[] = [];
-        while (this.queue.length > 0) {
-            const chunk = this.queue.shift();
-            if (chunk) {
-                batch.push(chunk);
+        const buffer = this.audioContext.createBuffer(1, float32.length, this.config.sampleRate);
+        buffer.getChannelData(0).set(float32);
+        const source = this.audioContext.createBufferSource();
+        source.buffer = buffer;
+        source.connect(this.audioContext.destination);
+
+        source.onended = () => {
+            this.chunkPlayedCallback(int16.buffer);
+            const idx = this.audioBufferSources.indexOf(source);
+            if (idx !== -1) {
+                this.audioBufferSources.splice(idx, 1);
             }
-        }
-        return batch;
-    }
-
-    private concatPcmChunks(chunks: ArrayBuffer[]): ArrayBuffer {
-        let totalBytes = 0;
-        for (let i = 0; i < chunks.length; i++) {
-            totalBytes += chunks[i]!.byteLength;
-        }
-
-        const merged = new Uint8Array(totalBytes);
-        let offset = 0;
-        for (let i = 0; i < chunks.length; i++) {
-            const bytes = new Uint8Array(chunks[i]!);
-            merged.set(bytes, offset);
-            offset += bytes.byteLength;
-        }
-        return merged.buffer;
-    }
-
-    private schedulePlaybackFinishedCheck(): void {
-        this.cancelPlaybackFinishedCheck();
-        this.playbackFinishedTimer = setTimeout(() => {
-            this.playbackFinishedTimer = null;
-            if (!this.playing && this.queue.length === 0 && this.currentBatch.length === 0) {
+            if (typeof source.disconnect === "function") {
+                source.disconnect();
+            }
+            if (this.audioBufferSources.length === 0) {
                 this.allChunksPlayedCallback();
             }
-        }, this.PLAYBACK_FINISH_GRACE_MS);
-    }
+        };
 
-    private cancelPlaybackFinishedCheck(): void {
-        if (this.playbackFinishedTimer !== null) {
-            clearTimeout(this.playbackFinishedTimer);
-            this.playbackFinishedTimer = null;
+        this.audioBufferSources.push(source);
+
+        const currentTime = this.audioContext.currentTime;
+        if (this.audioTimeToPlay < currentTime) {
+            this.audioTimeToPlay = currentTime;
         }
-    }
+        source.start(this.audioTimeToPlay);
 
-    private pcmToWavDataUri(pcmChunk: ArrayBuffer, sampleRate: number): string {
-        const channels = 1;
-        const bitsPerSample = 16;
-        const blockAlign = channels * bitsPerSample / 8;
-        const byteRate = sampleRate * blockAlign;
-        const dataSize = pcmChunk.byteLength;
-        const wavBuffer = new ArrayBuffer(44 + dataSize);
-        const view = new DataView(wavBuffer);
-
-        this.writeAscii(view, 0, "RIFF");
-        view.setUint32(4, 36 + dataSize, true);
-        this.writeAscii(view, 8, "WAVE");
-        this.writeAscii(view, 12, "fmt ");
-        view.setUint32(16, 16, true);
-        view.setUint16(20, 1, true);
-        view.setUint16(22, channels, true);
-        view.setUint32(24, sampleRate, true);
-        view.setUint32(28, byteRate, true);
-        view.setUint16(32, blockAlign, true);
-        view.setUint16(34, bitsPerSample, true);
-        this.writeAscii(view, 36, "data");
-        view.setUint32(40, dataSize, true);
-
-        new Uint8Array(wavBuffer, 44).set(new Uint8Array(pcmChunk));
-
-        const uniApi = typeof uni !== "undefined" ? uni : undefined;
-        let base64 = "";
-        if (uniApi && typeof uniApi.arrayBufferToBase64 === "function") {
-            base64 = uniApi.arrayBufferToBase64(wavBuffer);
+        const msForChunkStart = Math.max(0, (this.audioTimeToPlay - currentTime) * 1000 - this.PRESTART_LEAD_MS);
+        if (msForChunkStart <= 0) {
+            this.chunkStartedCallback(int16.buffer);
         } else {
-            const bytes = new Uint8Array(wavBuffer);
-            let binary = "";
-            for (let i = 0; i < bytes.length; i++) {
-                binary += String.fromCharCode(bytes[i]!);
-            }
-            base64 = btoa(binary);
+            const timeout = createPausableTimeout(() => {
+                this.chunkStartedCallback(int16.buffer);
+                const idx = this.audioChunkStartedTimeouts.indexOf(timeout);
+                if (idx !== -1) {
+                    this.audioChunkStartedTimeouts.splice(idx, 1);
+                }
+            }, msForChunkStart);
+            this.audioChunkStartedTimeouts.push(timeout);
         }
-        return `data:audio/wav;base64,${base64}`;
+
+        const playbackRate = typeof source.playbackRate?.value === "number" ? source.playbackRate.value : 1;
+        this.audioTimeToPlay += buffer.duration / playbackRate;
     }
 
-    private writeAscii(view: DataView, offset: number, text: string): void {
-        for (let i = 0; i < text.length; i++) {
-            view.setUint8(offset + i, text.charCodeAt(i));
-        }
-    }
+    private config: WxOutputAudioSessionConfig;
 }

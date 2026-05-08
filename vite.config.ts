@@ -18,12 +18,15 @@ export default defineConfig({
         port: 7634,
         proxy: {
         '/api': {
-          target: 'http://10.180.84.125:7635',
+          target: 'https://xtalk.sjtuxlance.com/',
           changeOrigin: true,
+          secure: false,
         },
         '/ws': {
-          target: 'ws://10.180.84.125:7635',
-          ws: true
+          target: 'https://xtalk.sjtuxlance.com/',
+          changeOrigin: true,
+          ws: true,
+          secure: false,
         }
       },
     },

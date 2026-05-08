@@ -10,6 +10,9 @@ const clientMap: ActionToFunctionMap = {
         websocket.sendJson({ action: "vad_speech_end" })
     },
     "client_audio_chunk_started": async (data, websocket, conversation, outputAudioSession) => {
+        if (conversation.state.streamState === 'listening') {
+            return;
+        }
         conversation.state.streamState = 'speaking';
     },
     "client_audio_playback_finished": async (data, websocket, conversation, outputAudioSession) => {

@@ -184,7 +184,6 @@ const isStartDisabled = ref(false)
 const isStopDisabled = ref(true)
 let session = null
 
-console.log(uni ? 'Uni API is available2' : 'Uni API is not available');
 function showUserMessage(message, title = '提示') {
     const content = String(message ?? '')
     if (typeof uni !== 'undefined' && typeof uni.showModal === 'function') {
@@ -215,7 +214,12 @@ function syncStateFromSession(snapshot = null) {
 }
 
 function getWebSocketURL() {
-    return 'ws://10.180.84.125:7635/ws'
+    if (typeof window !== 'undefined' && window.location) {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+        console.log('WebSocket URL:', `${protocol}//${window.location.host}/ws`);
+        return `${protocol}//${window.location.host}/ws`
+    }
+    return 'wss://xtalk.sjtuxlance.com/ws'
 }
 
 /*

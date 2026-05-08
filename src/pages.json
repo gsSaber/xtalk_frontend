@@ -28,11 +28,6 @@
       }
     },
     {
-      "path": "pages/test",
-      "type": "page",
-      "style": {}
-    },
-    {
       "path": "pages/WebView",
       "type": "page",
       "layout": false,
