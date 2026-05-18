@@ -39,14 +39,23 @@ export function createMpWaveformRenderer(options: CreateMpWaveformRendererOption
             context.lineTo(frame.width, frame.baselineY);
             context.stroke();
 
-            if (frame.points.length) {
+            if (frame.dataArray && frame.bufferLength) {
+                const sliceWidth = frame.width / frame.bufferLength;
                 context.setStrokeStyle(frame.waveformColor);
                 context.setLineWidth(2);
                 context.beginPath();
-                context.moveTo(frame.points[0].x, frame.points[0].y);
-                for (let index = 1; index < frame.points.length; index++) {
-                    context.lineTo(frame.points[index].x, frame.points[index].y);
+                let x = 0;
+                for (let index = 0; index < frame.bufferLength; index++) {
+                    const v = frame.dataArray[index] / 128.0;
+                    const y = (v * frame.height) / 2;
+                    if (index === 0) {
+                        context.moveTo(x, y);
+                    } else {
+                        context.lineTo(x, y);
+                    }
+                    x += sliceWidth;
                 }
+                context.lineTo(frame.width, frame.height / 2);
                 context.stroke();
             }
 

@@ -12,9 +12,12 @@ export type { WxInputAudioSessionConfig, WxOutputAudioSessionConfig };
 
 interface WxInputAudioSessionConfig extends InputAudioSessionConfig {
     enableVAD?: boolean;
+    enableEnhancer?: boolean;
     vadAmplitudeThreshold?: number;
     vadModelUrl?: string;
     vadModelCachePath?: string;
+    enhancerModelUrl?: string;
+    enhancerModelCachePath?: string;
 }
 
 interface WxOutputAudioSessionConfig extends OutputAudioSessionConfig {
@@ -28,6 +31,12 @@ class WxInputAudioSession extends BaseInputAudioSession {
         positiveFramesBeforeStart: 2,
         negativeSpeechThreshold: 0.2,
         negativeFramesBeforeEnd: 50,
+    }
+    readonly ENHANCER_PARAMS = {
+        modelUrl: 'https://xtalk.sjtuxlance.com/static/models/fastenhancer_s.onnx',
+        modelCacheFileName: 'fastenhancer_s.onnx',
+        hopSize: 256,
+        nFFT: 512,
     }
     readonly ENERGY_VAD_PARAMS = {
         positiveFramesBeforeStart: 2,
@@ -50,6 +59,13 @@ class WxInputAudioSession extends BaseInputAudioSession {
     private vadFrameQueue: ArrayBuffer[] = [];
     private isProcessingVadFrames = false;
     private useNativeModelVad = false;
+    private enhancerSession: any = null;
+    private enhancerCaches: Record<string, any> | null = null;
+    private enhancerInputBuffer: number[] = [];
+    private enhancerOutputBuffer: number[] = [];
+    private enhancerFirstFrame = true;
+    private frameQueue: ArrayBuffer[] = [];
+    private isProcessingFrames = false;
 
     constructor(config: WxInputAudioSessionConfig) {
         super();
@@ -57,6 +73,9 @@ class WxInputAudioSession extends BaseInputAudioSession {
         this.nativeSampleRate = this.config.sampleRate;
         if (this.config.enableVAD === undefined) {
             this.config.enableVAD = true;
+        }
+        if (this.config.enableEnhancer === undefined) {
+            this.config.enableEnhancer = true;
         }
         if (this.config.vadAmplitudeThreshold === undefined) {
             this.config.vadAmplitudeThreshold = 0.012;
@@ -66,6 +85,12 @@ class WxInputAudioSession extends BaseInputAudioSession {
         }
         if (!this.config.vadModelCachePath) {
             this.config.vadModelCachePath = `${this.getUserDataPath()}/${this.MODEL_VAD_PARAMS.modelCacheFileName}`;
+        }
+        if (!this.config.enhancerModelUrl) {
+            this.config.enhancerModelUrl = this.ENHANCER_PARAMS.modelUrl;
+        }
+        if (!this.config.enhancerModelCachePath) {
+            this.config.enhancerModelCachePath = `${this.getUserDataPath()}/${this.ENHANCER_PARAMS.modelCacheFileName}`;
         }
     }
 
@@ -81,6 +106,16 @@ class WxInputAudioSession extends BaseInputAudioSession {
         this.recorder = uniApi.getRecorderManager();
         if (!this.recorder || typeof this.recorder.start !== "function") {
             throw new Error("RecorderManager is not available");
+        }
+
+        if (this.config.enableEnhancer) {
+            try {
+                await this.ensureEnhancerSession();
+            } catch (error) {
+                this.enhancerSession = null;
+                this.enhancerCaches = null;
+                console.warn("Falling back to raw input on mp-weixin enhancer:", error);
+            }
         }
 
         if (this.config.enableVAD) {
@@ -108,19 +143,7 @@ class WxInputAudioSession extends BaseInputAudioSession {
                 : this.config.sampleRate;
             const frames = this.processToFixedFrames(frameBuffer, nativeSampleRate);
             for (let i = 0; i < frames.length; i++) {
-                const frame = frames[i]!;
-                if (!this.config.enableVAD) {
-                    this.startSpeechIfNeeded();
-                    this.frameCallback(frame);
-                    continue;
-                }
-
-                if (this.useNativeModelVad) {
-                    this.enqueueVadFrame(frame);
-                } else {
-                    this.frameCallback(frame);
-                    this.handleVad(frame);
-                }
+                this.enqueueFrame(frames[i]!);
             }
 
         });
@@ -153,9 +176,22 @@ class WxInputAudioSession extends BaseInputAudioSession {
         this.recorder = null;
         this.inputBuffer = [];
         this.outputBuffer = [];
+        this.frameQueue = [];
+        this.isProcessingFrames = false;
         this.vadFrameQueue = [];
         this.isProcessingVadFrames = false;
         this.useNativeModelVad = false;
+        if (this.enhancerSession && typeof this.enhancerSession.destroy === "function") {
+            try {
+                this.enhancerSession.destroy();
+            } catch {
+            }
+        }
+        this.enhancerSession = null;
+        this.enhancerCaches = null;
+        this.enhancerInputBuffer = [];
+        this.enhancerOutputBuffer = [];
+        this.enhancerFirstFrame = true;
         if (this.vadSession && typeof this.vadSession.destroy === "function") {
             try {
                 this.vadSession.destroy();
@@ -293,6 +329,45 @@ class WxInputAudioSession extends BaseInputAudioSession {
         }
     }
 
+    private enqueueFrame(frameBuffer: ArrayBuffer): void {
+        this.frameQueue.push(frameBuffer.slice(0));
+        if (this.isProcessingFrames) {
+            return;
+        }
+        this.isProcessingFrames = true;
+        void this.drainFrameQueue();
+    }
+
+    private async drainFrameQueue(): Promise<void> {
+        try {
+            while (this.frameQueue.length > 0) {
+                const frameBuffer = this.frameQueue.shift();
+                if (!frameBuffer) {
+                    continue;
+                }
+                const nextFrame = await this.enhanceFrame(frameBuffer);
+                if (!this.config.enableVAD) {
+                    this.startSpeechIfNeeded();
+                    this.frameCallback(nextFrame);
+                    continue;
+                }
+
+                if (this.useNativeModelVad) {
+                    this.enqueueVadFrame(nextFrame);
+                } else {
+                    this.frameCallback(nextFrame);
+                    this.handleVad(nextFrame);
+                }
+            }
+        } finally {
+            this.isProcessingFrames = false;
+            if (this.frameQueue.length > 0) {
+                this.isProcessingFrames = true;
+                void this.drainFrameQueue();
+            }
+        }
+    }
+
     private async processVadFrame(frameBuffer: ArrayBuffer): Promise<void> {
         if (!this.vadSession) {
             this.frameCallback(frameBuffer);
@@ -349,6 +424,21 @@ class WxInputAudioSession extends BaseInputAudioSession {
         this.resetModelVadState();
     }
 
+    private async ensureEnhancerSession(): Promise<void> {
+        const wxApi = this.getWxApi();
+        if (typeof wxApi.createInferenceSession !== "function") {
+            throw new Error("wx.createInferenceSession is not available in current environment");
+        }
+
+        const modelPath = await this.ensureModelCached(
+            this.config.enhancerModelUrl,
+            this.config.enhancerModelCachePath,
+            "Enhancer"
+        );
+        this.enhancerSession = await this.createModelSession(wxApi, modelPath);
+        this.resetEnhancerState();
+    }
+
     private getWxApi(): any {
         if (typeof wx !== "undefined") {
             return wx;
@@ -357,13 +447,20 @@ class WxInputAudioSession extends BaseInputAudioSession {
     }
 
     private async ensureVadModelCached(): Promise<string> {
+        return this.ensureModelCached(this.config.vadModelUrl, this.config.vadModelCachePath, "VAD");
+    }
+
+    private async downloadVadModelToCache(): Promise<string> {
+        return this.downloadModelToCache(this.config.vadModelUrl, this.config.vadModelCachePath, "VAD");
+    }
+
+    private async ensureModelCached(modelUrl?: string, cachePath?: string, modelName = "Model"): Promise<string> {
         const fsManager = this.getWxApi().getFileSystemManager?.();
-        const cachePath = this.config.vadModelCachePath;
         if (!fsManager || typeof fsManager.access !== "function") {
             throw new Error("wx.getFileSystemManager.access is not available in current environment");
         }
         if (!cachePath) {
-            throw new Error("VAD model cache path is not configured");
+            throw new Error(`${modelName} model cache path is not configured`);
         }
 
         try {
@@ -376,16 +473,14 @@ class WxInputAudioSession extends BaseInputAudioSession {
             });
             return cachePath;
         } catch {
-            return this.downloadVadModelToCache();
+            return this.downloadModelToCache(modelUrl, cachePath, modelName);
         }
     }
 
-    private async downloadVadModelToCache(): Promise<string> {
+    private async downloadModelToCache(modelUrl?: string, cachePath?: string, modelName = "Model"): Promise<string> {
         const wxApi = this.getWxApi();
-        const modelUrl = this.config.vadModelUrl;
-        const cachePath = this.config.vadModelCachePath;
         if (!modelUrl || !cachePath) {
-            throw new Error("VAD model url or cache path is not configured");
+            throw new Error(`${modelName} model url or cache path is not configured`);
         }
 
         const tempFilePath = await new Promise<string>((resolve, reject) => {
@@ -396,7 +491,7 @@ class WxInputAudioSession extends BaseInputAudioSession {
                         resolve(result.tempFilePath);
                         return;
                     }
-                    reject(new Error(`Failed to download VAD model, status code: ${result?.statusCode ?? "unknown"}`));
+                    reject(new Error(`Failed to download ${modelName} model, status code: ${result?.statusCode ?? "unknown"}`));
                 },
                 fail: (error: any) => reject(error),
             });
@@ -427,7 +522,7 @@ class WxInputAudioSession extends BaseInputAudioSession {
     }
 
     private async createModelSession(wxApi: any, modelPath: string): Promise<any> {
-        const session = wxApi.createInferenceSession({
+        const session = wxApi.createInferenceSession({//创建vadsession
             model: modelPath,
             precisionLevel: 4,
         });
@@ -484,6 +579,22 @@ class WxInputAudioSession extends BaseInputAudioSession {
         this.vadPositiveFrameCount = 0;
     }
 
+    private resetEnhancerState(): void {
+        if (!this.enhancerSession) {
+            return;
+        }
+        this.enhancerCaches = {
+            cache_in_0: this.createInferenceTensor("float32", new Float32Array(1 * 256).fill(0), [1, 256]),
+            cache_in_1: this.createInferenceTensor("float32", new Float32Array(1 * 256).fill(0), [1, 256]),
+            cache_in_2: this.createInferenceTensor("float32", new Float32Array(1 * 36 * 48).fill(0), [1, 36, 48]),
+            cache_in_3: this.createInferenceTensor("float32", new Float32Array(1 * 36 * 48).fill(0), [1, 36, 48]),
+            cache_in_4: this.createInferenceTensor("float32", new Float32Array(1 * 36 * 48).fill(0), [1, 36, 48]),
+        };
+        this.enhancerInputBuffer = [];
+        this.enhancerOutputBuffer = [];
+        this.enhancerFirstFrame = true;
+    }
+
     private createInferenceTensor(type: string, data: any, shape: number[]): any {
         const wxApi = this.getWxApi();
         const candidates = [
@@ -510,6 +621,13 @@ class WxInputAudioSession extends BaseInputAudioSession {
         return this.vadSession.run(inputs);
     }
 
+    private async runEnhancerSession(inputs: Record<string, any>): Promise<any> {
+        if (!this.enhancerSession || typeof this.enhancerSession.run !== "function") {
+            throw new Error("wx enhancer session is not ready");
+        }
+        return this.enhancerSession.run(inputs);
+    }
+
     private getTensorValue(tensor: any, index: number): number {
         if (!tensor) {
             return 0;
@@ -532,6 +650,59 @@ class WxInputAudioSession extends BaseInputAudioSession {
             float32[i] = (pcm[i] ?? 0) / 32768;
         }
         return float32;
+    }
+
+    private async enhanceFrame(frameBuffer: ArrayBuffer): Promise<ArrayBuffer> {
+        if (!this.config.enableEnhancer || !this.enhancerSession || !this.enhancerCaches) {
+            return frameBuffer;
+        }
+
+        const frame = this.int16BufferToFloat32(frameBuffer);
+        for (let i = 0; i < frame.length; i++) {
+            this.enhancerInputBuffer.push(frame[i] ?? 0);
+        }
+
+        while (this.enhancerInputBuffer.length >= this.ENHANCER_PARAMS.hopSize) {
+            const chunk = this.enhancerInputBuffer.splice(0, this.ENHANCER_PARAMS.hopSize);
+            const wavIn = this.createInferenceTensor(
+                "float32",
+                new Float32Array(chunk),
+                [1, this.ENHANCER_PARAMS.hopSize]
+            );
+            const inputs: Record<string, any> = { wav_in: wavIn };
+            for (const cacheName of Object.keys(this.enhancerCaches)) {
+                inputs[cacheName] = this.enhancerCaches[cacheName];
+            }
+
+            const outputs = await this.runEnhancerSession(inputs);
+            const outputNames: string[] = this.enhancerSession.outputNames || Object.keys(outputs);
+            const enhancedChunk = this.getTensorData(outputs[outputNames[0]]);
+
+            for (let i = 1; i < outputNames.length; i++) {
+                const cacheName = `cache_in_${i - 1}`;
+                this.enhancerCaches[cacheName] = outputs[outputNames[i]];
+            }
+
+            for (let i = 0; i < enhancedChunk.length; i++) {
+                this.enhancerOutputBuffer.push(Number(enhancedChunk[i] ?? 0));
+            }
+
+            if (this.enhancerFirstFrame && this.enhancerOutputBuffer.length >= (this.ENHANCER_PARAMS.nFFT - this.ENHANCER_PARAMS.hopSize)) {
+                this.enhancerOutputBuffer.splice(0, this.ENHANCER_PARAMS.nFFT - this.ENHANCER_PARAMS.hopSize);
+                this.enhancerFirstFrame = false;
+            }
+        }
+
+        if (this.enhancerOutputBuffer.length >= frame.length) {
+            const output = this.enhancerOutputBuffer.splice(0, frame.length);
+            return this.float32ToInt16Buffer(output);
+        }
+
+        return frameBuffer;
+    }
+
+    private getTensorData(tensor: any): ArrayLike<number> {
+        return tensor?.data ?? tensor?.value ?? tensor ?? [];
     }
 
     private handleVad(frameBuffer: ArrayBuffer): void {

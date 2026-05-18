@@ -51,7 +51,7 @@
             </view>
         </view>
         <view class="card">
-            <canvas id="waveform" canvas-id="waveform"></canvas>
+            <canvas id="waveform" ref="waveformCanvasRef" canvas-id="waveform"></canvas>
         </view>
         <view class="card">
             <view id="messages">
@@ -114,6 +114,7 @@ let recentAudioIsPlaying = false;
 let recentAudioHasSource = false;
 let waveformController = null;
 let waveformResizeHandler = null;
+const waveformCanvasRef = ref(null);
 const platform = getPlatform();
 const componentInstance = getCurrentInstance()?.proxy;
 
@@ -212,14 +213,19 @@ function getWebSocketURL() {
     return 'wss://xtalk.sjtuxlance.com/ws'
 }
 
+function resolveWaveformCanvasElement() {
+    const waveformNode: any = waveformCanvasRef.value;
+    if (!waveformNode) {
+        return null;
+    }
+    return waveformNode.$el.querySelector('canvas');
+}
+
 async function initWaveform() {
     await nextTick();
 
     if (platform === Platform.Web) {
-        const waveformNode = document.getElementById('waveform');
-        $waveform = waveformNode instanceof HTMLCanvasElement
-            ? waveformNode
-            : waveformNode?.querySelector?.('canvas');
+        $waveform = resolveWaveformCanvasElement();
 
         if (!$waveform) {
             throw new Error('Unable to find waveform canvas element.');

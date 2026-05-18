@@ -1,10 +1,5 @@
 export type WaveformStreamState = 'idle' | 'listening' | 'processing' | 'speaking' | string;
 
-export interface WaveformPoint {
-    x: number;
-    y: number;
-}
-
 export interface WaveformFrame {
     width: number;
     height: number;
@@ -12,7 +7,8 @@ export interface WaveformFrame {
     backgroundColor: string;
     baselineColor: string;
     waveformColor: string;
-    points: WaveformPoint[];
+    dataArray: Uint8Array | null;
+    bufferLength: number;
 }
 
 export interface WaveformRenderer {
@@ -35,13 +31,18 @@ interface CreateWaveformControllerOptions {
 }
 
 interface ChannelSamples {
-    values: number[];
+    values: Uint8Array | null;
     updatedAt: number;
 }
 
-const DEFAULT_MAX_POINTS = 180;
+const DEFAULT_MAX_POINTS = 1024;
 const DEFAULT_FRAME_INTERVAL_MS = 33;
 const DEFAULT_FRESH_WINDOW_MS = 180;
+const PCM_MAX_VALUE = 32768;
+
+function clampByteValue(value: number) {
+    return Math.max(0, Math.min(255, value));
+}
 
 export function createWaveformController(options: CreateWaveformControllerOptions) {
     const colors = {
@@ -61,34 +62,26 @@ export function createWaveformController(options: CreateWaveformControllerOption
     let timerId: ReturnType<typeof setInterval> | null = null;
     let isRunning = false;
 
-    const input: ChannelSamples = { values: [], updatedAt: 0 };
-    const output: ChannelSamples = { values: [], updatedAt: 0 };
+    const input: ChannelSamples = { values: null, updatedAt: 0 };
+    const output: ChannelSamples = { values: null, updatedAt: 0 };
 
     function extractWaveformSamples(pcmChunkInt16: ArrayBuffer) {
         const int16 = new Int16Array(pcmChunkInt16);
         if (!int16.length) {
-            return [];
+            return null;
         }
 
-        const bucketSize = Math.max(1, Math.floor(int16.length / maxPoints));
-        const samples: number[] = [];
+        const sampleCount = Math.min(maxPoints, int16.length);
+        const stride = Math.max(1, Math.floor(int16.length / sampleCount));
+        const bytes = new Uint8Array(sampleCount);
 
-        for (let start = 0; start < int16.length; start += bucketSize) {
-            const end = Math.min(int16.length, start + bucketSize);
-            let peakSample = 0;
-            for (let index = start; index < end; index++) {
-                const normalized = int16[index] / 32768;
-                if (Math.abs(normalized) > Math.abs(peakSample)) {
-                    peakSample = normalized;
-                }
-            }
-            samples.push(Math.max(-1, Math.min(1, peakSample)));
-            if (samples.length >= maxPoints) {
-                break;
-            }
+        for (let index = 0; index < sampleCount; index++) {
+            const sourceIndex = Math.min(int16.length - 1, index * stride);
+            const normalized = int16[sourceIndex] / PCM_MAX_VALUE;
+            bytes[index] = clampByteValue(Math.round(normalized * 128 + 128));
         }
 
-        return samples;
+        return bytes;
     }
 
     function getActiveSamples(now: number) {
@@ -96,7 +89,7 @@ export function createWaveformController(options: CreateWaveformControllerOption
             if (now - output.updatedAt <= freshWindowMs) {
                 return output.values;
             }
-            return [];
+            return null;
         }
 
         if (streamState === 'listening' || streamState === 'processing') {
@@ -105,22 +98,7 @@ export function createWaveformController(options: CreateWaveformControllerOption
             }
         }
 
-        return [];
-    }
-
-    function buildPoints(width: number, height: number, samples: number[]) {
-        if (!samples.length) {
-            return [];
-        }
-
-        const baselineY = height / 2;
-        const amplitude = height * 0.38;
-        const sliceWidth = samples.length > 1 ? width / (samples.length - 1) : width;
-
-        return samples.map((sample, index) => ({
-            x: index * sliceWidth,
-            y: baselineY - sample * amplitude,
-        }));
+        return null;
     }
 
     async function renderFrame() {
@@ -144,7 +122,8 @@ export function createWaveformController(options: CreateWaveformControllerOption
             backgroundColor: colors.background,
             baselineColor: colors.baseline,
             waveformColor,
-            points: buildPoints(width, height, activeSamples),
+            dataArray: activeSamples,
+            bufferLength: activeSamples?.length || 0,
         });
     }
 

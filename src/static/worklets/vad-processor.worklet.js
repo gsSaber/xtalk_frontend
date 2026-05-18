@@ -1,5 +1,3 @@
-console.log('VAD Processor initialized  ');
-
 // VAD Audio Worklet Processor with Resampling
 class VADProcessor extends AudioWorkletProcessor {
     constructor(options) {

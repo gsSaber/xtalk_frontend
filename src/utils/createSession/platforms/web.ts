@@ -88,6 +88,7 @@ declare global {
         vad?: any;
     }
 }
+
 class WebInputAudioSession extends BaseInputAudioSession {
     readonly VAD_PARAMS = {
         vadFrameSamples: 512,
@@ -261,7 +262,7 @@ class WebInputAudioSession extends BaseInputAudioSession {
 
         const frameProcessorProcess = async (frame: Float32Array) => {
             const enhancedFrame = await enhanceFrame(frame);
-            const audioTensor = new window.ort.Tensor('float32', enhancedFrame, [1, enhancedFrame.length]);
+            const audioTensor = new window.ort.Tensor('float32', enhancedFrame, [1, enhancedFrame.length]);.
             const inputs = { input: audioTensor, state: vadState, sr: vadSr };
             const out = await vadSession.run(inputs);
             vadState = out.stateN;
