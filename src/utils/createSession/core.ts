@@ -102,7 +102,12 @@ function createSession(
                     resolve(response.data as T);
                 },
                 fail: (error: unknown) => {
-                    reject(error);
+                    const msg = typeof error?.message === "string"
+                        ? error.message
+                        : typeof error === "string"
+                            ? error
+                            : JSON.stringify(error) || String(error);
+                    reject(new Error(msg));
                 },
             });
         });
@@ -139,9 +144,14 @@ function createSession(
             websocket.addEventListener("open", () => {
                 resolve();
             });
-            websocket.addEventListener("error", () => {
-                reject(new Error("WebSocket connection failed"));
-            });
+        websocket.addEventListener("error", () => {
+            reject(new Error("WebSocket connection failed"));
+        });
+        websocket.addEventListener("close", (event) => {
+            if (!event.wasClean) {
+                console.error("WebSocket closed uncleanly, code:", event.code);
+            }
+        });
         });
 
         // Subscribe actions and audio chunks
@@ -236,6 +246,40 @@ function createSession(
         },
         onFullAudioChunk: (callback: (pcmChunkInt16: ArrayBuffer, sampleRate: number) => void) => {
             conversation.onFullAudioChunk(callback);
+        },
+        onSessionIdChange: (callback: (sessionId: string | null) => void) => {
+            conversation.onSessionIdChange(callback);
+        },
+        loadHistory: (messages: { role: string; content: string }[]) => {
+            conversation.loadHistory(messages);
+        },
+        async fetchSessionHistory(sessionId: string): Promise<void> {
+            if (!accessToken) {
+                return;
+            }
+            const baseURL = resolveBaseURL(websocketURL)
+                .replace(/^ws:/i, "http:")
+                .replace(/^wss:/i, "https:");
+            const url = `${baseURL.replace(/\/ws(?:\?.*)?$/i, "")}/api/sessions/${encodeURIComponent(sessionId)}`;
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                        Accept: "application/json",
+                    },
+                });
+                if (!response.ok) {
+                    console.warn("[fetchSessionHistory] HTTP", response.status);
+                    return;
+                }
+                const data = await response.json() as any;
+                const messages: { role: string; content: string }[] = data?.messages || [];
+                if (messages.length > 0) {
+                    conversation.loadHistory(messages);
+                }
+            } catch (e) {
+                console.warn("[fetchSessionHistory] failed:", e);
+            }
         },
         get muted() {
             return manualMuted;

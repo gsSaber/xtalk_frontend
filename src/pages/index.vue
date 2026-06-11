@@ -98,7 +98,6 @@
 import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 // import { createSession } from '../js/index.js'
 import { createSession } from '@/utils/createSession';
-import { Platform, getPlatform } from '@/utils/createSession/utils';
 import { createWaveformController } from '@/utils/waveform/core';
 import { createWebWaveformRenderer } from '@/utils/waveform/web';
 import { createMpWaveformRenderer } from '@/utils/waveform/mp';
@@ -115,7 +114,7 @@ let recentAudioHasSource = false;
 let waveformController = null;
 let waveformResizeHandler = null;
 const waveformCanvasRef = ref(null);
-const platform = getPlatform();
+const isWebPlatform = typeof window !== 'undefined' && typeof document !== 'undefined';
 const componentInstance = getCurrentInstance()?.proxy;
 
 // // let $voiceSelect = null;
@@ -201,14 +200,22 @@ function syncStateFromSession(snapshot = null) {
         role: msg?.role || 'assistant',
         content: msg?.content || '',
     }));
-    // Object.assign(state.messages, source.messages);
 }
 
 function getWebSocketURL() {
+    // 优先使用环境变量配置的远程服务器地址（生产/联调环境）
+    const remoteUrl = import.meta.env.VITE_XTALK_WS_URL;
+    if (remoteUrl) {
+        const url = String(remoteUrl).trim();
+        console.log('WebSocket URL (from env):', url);
+        return url;
+    }
+    // 开发环境：优先走 vite dev proxy
     if (typeof window !== 'undefined' && window.location) {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-        console.log('WebSocket URL:', `${protocol}//${window.location.host}/ws`);
-        return `${protocol}//${window.location.host}/ws`
+        const url = `${protocol}//${window.location.host}/ws`;
+        console.log('WebSocket URL (dev proxy):', url);
+        return url;
     }
     return 'wss://xtalk.sjtuxlance.com/ws'
 }
@@ -221,10 +228,22 @@ function resolveWaveformCanvasElement() {
     return waveformNode.$el.querySelector('canvas');
 }
 
+function clearNewEditionPersistedSession(websocketURL: string) {
+    if (!isWebPlatform || typeof window.localStorage === 'undefined') {
+        return
+    }
+    try {
+        const resolvedURL = new URL(websocketURL, window.location.href)
+        window.localStorage.removeItem(`xtalk:session:${resolvedURL.toString()}`)
+    } catch (error) {
+        console.warn('Failed to clear persisted session snapshot', error)
+    }
+}
+
 async function initWaveform() {
     await nextTick();
 
-    if (platform === Platform.Web) {
+    if (isWebPlatform) {
         $waveform = resolveWaveformCanvasElement();
 
         if (!$waveform) {
@@ -580,7 +599,14 @@ function playVoice() {
 
 onMounted(async () => {
 try {
-session = createSession(getWebSocketURL());
+const websocketURL = getWebSocketURL();
+clearNewEditionPersistedSession(websocketURL);
+session = createSession(websocketURL);
+session.onSessionIdChange((sessionId) => {
+    if (sessionId) {
+        session.fetchSessionHistory(sessionId);
+    }
+});
 syncStateFromSession();
 await initWaveform();
 // const $btnStart = document.getElementById('btn-start');

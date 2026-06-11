@@ -7,6 +7,7 @@ const clientMap: ActionToFunctionMap = {
     },
     "client_speech_end": async (data, websocket, conversation, outputAudioSession) => {
         onVadSpeechEnd(data, websocket, conversation, outputAudioSession);
+        console.log('VAD detected speech end2')
         websocket.sendJson({ action: "vad_speech_end" })
     },
     "client_audio_chunk_started": async (data, websocket, conversation, outputAudioSession) => {

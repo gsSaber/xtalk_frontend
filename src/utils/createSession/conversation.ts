@@ -35,6 +35,7 @@ class Conversation {
     private _state: ConversationState = defaultConversation();
     private stateChangeCallback: (state: ConversationState) => void = () => { };
     private fullAudioChunkCallback: (pcmChunkInt16: ArrayBuffer, sampleRate: number) => void = (_chunk, _sr) => { };
+    private sessionIdChangeCallback: (sessionId: string | null) => void = (_id) => { };
     onStateChange(callback: (state: ConversationState) => void): void {
         callback(this._state);
         this.stateChangeCallback = callback;
@@ -44,10 +45,16 @@ class Conversation {
     ): void {
         this.fullAudioChunkCallback = callback;
     }
+    onSessionIdChange(callback: (sessionId: string | null) => void): void {
+        this.sessionIdChangeCallback = callback;
+    }
     get state(): ConversationState {
         return new Proxy(this._state, {
             set: (target, key: keyof ConversationState, value) => {
                 target[key] = value;
+                if (key === "sessionId") {
+                    this.sessionIdChangeCallback(value);
+                }
                 this.stateChangeCallback(target);
                 return true;
             },
@@ -58,22 +65,17 @@ class Conversation {
     }
     appendMessage(message: Message): void {
         // If is an info, directly append
+        // console.log("appendMessage", message);
         if (message.role === "info") {
             this.state.messages.push(message);
             this.stateChangeCallback(this._state);
             return;
         }
         // Find the latest message with same role and turnId to replace
-        for (let i = this.state.messages.length - 1; i >= 0; i--) {
-            const msg = this.state.messages[i]!;
-            if (msg.role === message.role && msg.turnId === message.turnId) {
-                msg.content = message.content;
-                // If last message is an info, put that message in front of the updated message
-                const lastMsg = this.state.messages[this.state.messages.length - 1]!;
-                if (lastMsg.role === "info") {
-                    this.state.messages.splice(this.state.messages.length - 1, 1);
-                    this.state.messages.splice(i, 0, lastMsg);
-                }
+        if(this.state.messages.length > 0){
+            const lastMessage = this.state.messages[this.state.messages.length - 1];
+            if(lastMessage.role === message.role && lastMessage.turnId === message.turnId){
+                lastMessage.content = message.content;
                 this.stateChangeCallback(this._state);
                 return;
             }
@@ -87,5 +89,12 @@ class Conversation {
     }
     emitFullAudioChunk(pcmChunkInt16: ArrayBuffer, sampleRate: number): void {
         this.fullAudioChunkCallback(pcmChunkInt16, sampleRate);
+    }
+    loadHistory(messages: { role: string; content: string }[]): void {
+        this._state.messages = messages.map((m) => ({
+            role: m.role as "user" | "assistant" | "info",
+            content: m.content,
+        }));
+        this.stateChangeCallback(this._state);
     }
 }

@@ -122,7 +122,7 @@ class WebInputAudioSession extends BaseInputAudioSession {
         // Default config
         config = { ...config };
         if (config.enableVAD === undefined) {
-            config.enableVAD = false;
+            config.enableVAD = true;
             // config.enableVAD = false; // Disable VAD by default as it may cause issues on some devices
         }
         if (config.enableEnhancer === undefined) {
@@ -241,6 +241,7 @@ class WebInputAudioSession extends BaseInputAudioSession {
         this.directSpeechActive = false;
         this.directPositiveFrameCount = 0;
         this.directNegativeFrameCount = 0;
+        console.log('directspeechend');
         this.speechEndCallback();
     }
 
@@ -262,7 +263,7 @@ class WebInputAudioSession extends BaseInputAudioSession {
 
         const frameProcessorProcess = async (frame: Float32Array) => {
             const enhancedFrame = await enhanceFrame(frame);
-            const audioTensor = new window.ort.Tensor('float32', enhancedFrame, [1, enhancedFrame.length]);.
+            const audioTensor = new window.ort.Tensor('float32', enhancedFrame, [1, enhancedFrame.length]);
             const inputs = { input: audioTensor, state: vadState, sr: vadSr };
             const out = await vadSession.run(inputs);
             vadState = out.stateN;
@@ -288,6 +289,7 @@ class WebInputAudioSession extends BaseInputAudioSession {
                         const nsHigh = ns > (1 - this.VAD_PARAMS.vadConfig.negativeSpeechThreshold);
                         vadHelpers.negEndCounter = nsHigh ? (vadHelpers.negEndCounter + 1) : 0;
                         if (vadHelpers.negEndCounter > this.VAD_PARAMS.vadNegativeFramesBeforeEnd) {
+                            console.log("vadspeechend0");
                             this.speechEndCallback();
                             vadHelpers.negEndCounterEnabled = false;
                             vadHelpers.negEndCounter = 0;
@@ -305,6 +307,7 @@ class WebInputAudioSession extends BaseInputAudioSession {
                     break;
 
                 case window.vad.Message.SpeechEnd:
+                    console.log("vadspeechend1");
                     this.speechEndCallback();
                     vadHelpers.negEndCounterEnabled = false;
                     vadHelpers.negEndCounter = 0;
